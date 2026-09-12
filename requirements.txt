@@ -19,3 +19,5 @@ faiss-cpu>=1.8,<2.0
 
 # M4 keyword retrieval dependency
 rank-bm25>=0.2,<1.0
+
+# M5/M6 RAG, cache, and logging use the standard library plus dependencies above.

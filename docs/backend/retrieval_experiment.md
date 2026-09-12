@@ -24,7 +24,7 @@ Provide a JSONL file with one real evaluation item per line:
 ## Reproducible command
 
 ```bash
-.venv/bin/python scripts/evaluate_retrieval.py data/samples/paper.pdf --evaluation data/samples/retrieval.jsonl --output /tmp/retrieval-results.json
+.venv/bin/python scripts/evaluate_retrieval.py path/to/paper.pdf --evaluation path/to/retrieval.jsonl --output /tmp/retrieval-results.json
 ```
 
 The script computes Hit@5 and MRR independently for all three modes and writes
