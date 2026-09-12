@@ -10,9 +10,12 @@ embedding:
   provider: local
   model_name: bge-large-zh
   batch_size: 32
+  normalize_embeddings: true
 
 vector_store:
   type: chroma
+  persist_directory: data/indexes/chroma
+  collection_name: cowork_documents
 
 retrieval:
   vector_top_k: 20

@@ -29,10 +29,13 @@ class EmbeddingConfig(_ConfigModel):
     provider: str = "local"
     model_name: str = "bge-large-zh"
     batch_size: int = Field(default=32, gt=0)
+    normalize_embeddings: bool = True
 
 
 class VectorStoreConfig(_ConfigModel):
     type: str = "chroma"
+    persist_directory: str = "data/indexes/chroma"
+    collection_name: str = "cowork_documents"
 
 
 class RetrievalConfig(_ConfigModel):
