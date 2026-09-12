@@ -1,0 +1,32 @@
+document:
+  pdf_engine: pymupdf
+
+chunking:
+  strategy: recursive
+  chunk_size: 512
+  chunk_overlap: 64
+
+embedding:
+  provider: local
+  model_name: bge-large-zh
+  batch_size: 32
+
+vector_store:
+  type: chroma
+
+retrieval:
+  vector_top_k: 20
+  final_top_k: 5
+  enable_bm25: true
+  enable_rrf: true
+  rrf_k: 60
+  enable_reranker: true
+
+rag:
+  temperature: 0.2
+  top_p: 0.9
+  allow_llm_fallback: true
+
+cache:
+  enabled: true
+  similarity_threshold: 0.95
