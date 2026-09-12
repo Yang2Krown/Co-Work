@@ -63,12 +63,14 @@ class RagConfig(_ConfigModel):
     temperature: float = Field(default=0.2, ge=0)
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: Optional[int] = Field(default=None, gt=0)
+    low_relevance_threshold: float = Field(default=0.2, ge=0)
     allow_llm_fallback: bool = True
 
 
 class CacheConfig(_ConfigModel):
     enabled: bool = True
     similarity_threshold: float = Field(default=0.95, ge=0, le=1)
+    max_entries: int = Field(default=256, gt=0)
 
 
 class BackendConfig(_ConfigModel):

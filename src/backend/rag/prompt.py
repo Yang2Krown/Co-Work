@@ -41,7 +41,11 @@ If Retrieved Context is empty or does not support the answer, explicitly state:
 """
 
 
-def build_prompt(question: str, context: str) -> RAGPrompt:
+def build_prompt(
+    question: str,
+    context: str,
+    low_relevance: bool = False,
+) -> RAGPrompt:
     """Build a stable grounded prompt from a question and bounded context."""
 
     if not isinstance(question, str) or not question.strip():
@@ -60,6 +64,13 @@ def build_prompt(question: str, context: str) -> RAGPrompt:
     user = "\n\n".join(
         [
             "Retrieved Context:\n" + (context or "(No retrieved context.)"),
+            (
+                "Evidence Quality Notice:\n"
+                "The retrieved evidence may be weak. Distinguish supported facts "
+                "from uncertainty."
+                if low_relevance
+                else ""
+            ),
             "User Question:\n" + question.strip(),
         ]
     )

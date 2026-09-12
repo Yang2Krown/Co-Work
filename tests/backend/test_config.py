@@ -21,7 +21,9 @@ def test_load_backend_config() -> None:
     assert config.rag.provider == "openai_compatible"
     assert config.rag.max_context_chars == 6000
     assert config.rag.top_k is None
+    assert config.rag.low_relevance_threshold == 0.2
     assert config.rag.temperature == 0.2
+    assert config.cache.max_entries == 256
 
 
 def test_invalid_backend_config_raises_configuration_error(tmp_path: Path) -> None:

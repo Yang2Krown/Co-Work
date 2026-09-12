@@ -55,6 +55,7 @@ class RAGResponse(_SchemaModel):
     latency_ms: float = Field(ge=0)
     token_usage: Optional[Dict[str, Any]] = None
     fallback_used: bool = False
+    error: Optional[str] = None
 
 
 __all__ = ["Citation", "Chunk", "Document", "RAGResponse", "RetrievalResult"]

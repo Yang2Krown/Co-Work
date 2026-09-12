@@ -41,8 +41,10 @@ rag:
   temperature: 0.2
   top_p: 0.9
   top_k: null
+  low_relevance_threshold: 0.2
   allow_llm_fallback: true
 
 cache:
   enabled: true
   similarity_threshold: 0.95
+  max_entries: 256
