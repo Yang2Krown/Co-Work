@@ -10,6 +10,7 @@ def create_vector_store(
     store_type: str,
     persist_directory: str = "data/indexes",
     collection_name: str = "cowork_documents",
+    faiss_num_threads: int = 1,
 ) -> VectorStore:
     """Create a configured Chroma, FAISS, or in-memory store."""
 
@@ -21,7 +22,7 @@ def create_vector_store(
     if normalized == "faiss":
         from .faiss_store import FAISSVectorStore
 
-        return FAISSVectorStore(persist_directory)
+        return FAISSVectorStore(persist_directory, num_threads=faiss_num_threads)
     if normalized in {"memory", "in-memory", "inmemory"}:
         from .memory_store import InMemoryVectorStore
 
@@ -34,4 +35,3 @@ def create_vector_store(
 
 
 __all__ = ["create_vector_store"]
-

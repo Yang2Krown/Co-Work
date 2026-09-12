@@ -36,6 +36,7 @@ def main() -> int:
         config.vector_store.type,
         config.vector_store.persist_directory,
         config.vector_store.collection_name,
+        config.vector_store.faiss_num_threads,
     )
     index = IncrementalIndex(
         vector_store=vector_store,
@@ -66,4 +67,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

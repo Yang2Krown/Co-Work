@@ -14,13 +14,24 @@ from .base import PathLike, Vector, VectorStore, validate_vectors
 class FAISSVectorStore(VectorStore):
     """Inner-product FAISS index for normalized embeddings."""
 
-    def __init__(self, persist_directory: PathLike = "data/indexes/faiss") -> None:
+    def __init__(
+        self,
+        persist_directory: PathLike = "data/indexes/faiss",
+        num_threads: int = 1,
+    ) -> None:
+        if num_threads <= 0:
+            raise ValueError("num_threads must be greater than zero")
         try:
             import faiss
         except ImportError as exc:
             raise VectorStoreError("faiss-cpu is required for FAISSVectorStore") from exc
 
         self._faiss = faiss
+        # On macOS, FAISS OpenMP workers can conflict with the PyTorch runtime
+        # used by SentenceTransformers in the same process. A single FAISS
+        # worker is the safe default for the local backend and remains tunable.
+        self.num_threads = num_threads
+        self._faiss.omp_set_num_threads(self.num_threads)
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         self._index_path = self.persist_directory / "index.faiss"
@@ -93,6 +104,7 @@ class FAISSVectorStore(VectorStore):
         if query.shape[1] != self._dimension:
             raise VectorStoreError("Query embedding dimension does not match index")
         try:
+            self._faiss.omp_set_num_threads(self.num_threads)
             scores, identifiers = self._index.search(query, min(top_k, self._index.ntotal))
         except Exception as exc:
             raise VectorStoreError("Unable to search FAISS vector store") from exc
@@ -143,4 +155,3 @@ class FAISSVectorStore(VectorStore):
 
 
 __all__ = ["FAISSVectorStore"]
-

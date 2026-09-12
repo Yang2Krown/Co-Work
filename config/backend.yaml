@@ -16,14 +16,19 @@ vector_store:
   type: chroma
   persist_directory: data/indexes/chroma
   collection_name: cowork_documents
+  faiss_num_threads: 1
 
 retrieval:
   vector_top_k: 20
+  bm25_top_k: 20
   final_top_k: 5
   enable_bm25: true
   enable_rrf: true
   rrf_k: 60
   enable_reranker: true
+  reranker_model_name: bge-reranker-base
+  reranker_top_n: 20
+  reranker_batch_size: 16
 
 rag:
   temperature: 0.2

@@ -36,15 +36,20 @@ class VectorStoreConfig(_ConfigModel):
     type: str = "chroma"
     persist_directory: str = "data/indexes/chroma"
     collection_name: str = "cowork_documents"
+    faiss_num_threads: int = Field(default=1, gt=0)
 
 
 class RetrievalConfig(_ConfigModel):
     vector_top_k: int = Field(default=20, gt=0)
+    bm25_top_k: int = Field(default=20, gt=0)
     final_top_k: int = Field(default=5, gt=0)
     enable_bm25: bool = True
     enable_rrf: bool = True
     rrf_k: int = Field(default=60, gt=0)
     enable_reranker: bool = True
+    reranker_model_name: str = "bge-reranker-base"
+    reranker_top_n: int = Field(default=20, gt=0)
+    reranker_batch_size: int = Field(default=16, gt=0)
 
 
 class RagConfig(_ConfigModel):
