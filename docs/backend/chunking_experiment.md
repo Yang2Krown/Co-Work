@@ -23,15 +23,19 @@ Run from the repository root with real sample documents:
 ```
 
 The script measures chunk count and character-length statistics for chunk sizes
-256, 512, and 1024 by default. It writes only observed results. Retrieval
-metrics such as Hit@5 and MRR belong to later retrieval milestones and are not
-generated here.
+256, 512, and 1024 by default. To close the retrieval loop with a real QA set,
+add `--evaluation path/to/qa.jsonl --embedding-model m3e-base`. The QA set must
+contain `question` and either real `relevant_chunk_ids` or stable
+`relevant_document_ids`, optionally restricted by `relevant_page_numbers`.
+The script then builds an in-memory vector index for every strategy/size and
+reports only measured vector Hit@5 and MRR. `m3e-base` and `bge-large-zh` can be
+run separately for a model sensitivity check.
 
 ## Current record
 
-No real academic-document corpus was supplied when M2 was implemented, so this
-file intentionally contains no fabricated measurements. Run the command above
-with the project sample corpus and append the generated observations here.
+No real academic-document corpus or gold QA set was supplied, so this file
+intentionally contains no fabricated measurements. Run the command above with
+the supplied corpus and append the generated JSON observations here.
 
 ## Academic PDF considerations and known limitations
 
@@ -47,4 +51,3 @@ with the project sample corpus and append the generated observations here.
 - **Headings and section boundaries:** paragraph and recursive strategies use
   textual line/paragraph boundaries; they do not perform full document-layout
   analysis.
-

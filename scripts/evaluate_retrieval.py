@@ -32,6 +32,28 @@ def reciprocal_rank(results: Sequence[Any], relevant_ids: Iterable[str]) -> floa
     return 0.0
 
 
+def _result_matches(result: Any, row: Dict[str, Any]) -> bool:
+    relevant_chunk_ids = row.get("relevant_chunk_ids", [])
+    if result.chunk_id in relevant_chunk_ids:
+        return True
+    relevant_document_ids = row.get("relevant_document_ids", [])
+    if result.document_id not in relevant_document_ids:
+        return False
+    relevant_pages = row.get("relevant_page_numbers")
+    return relevant_pages is None or result.page_number in relevant_pages
+
+
+def _hit_at_k_row(results: Sequence[Any], row: Dict[str, Any], k: int = 5) -> float:
+    return float(any(_result_matches(result, row) for result in results[:k]))
+
+
+def _reciprocal_rank_row(results: Sequence[Any], row: Dict[str, Any]) -> float:
+    for rank, result in enumerate(results, start=1):
+        if _result_matches(result, row):
+            return 1.0 / rank
+    return 0.0
+
+
 def load_evaluation_set(path: Path) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -41,13 +63,36 @@ def load_evaluation_set(path: Path) -> List[Dict[str, Any]]:
         if not isinstance(row, dict) or not isinstance(row.get("question"), str):
             raise ValueError(f"Invalid evaluation row at line {line_number}")
         relevant_ids = row.get("relevant_chunk_ids")
-        if not isinstance(relevant_ids, list) or not all(
-            isinstance(item, str) for item in relevant_ids
+        document_ids = row.get("relevant_document_ids")
+        if relevant_ids is not None and (
+            not isinstance(relevant_ids, list)
+            or not all(isinstance(item, str) for item in relevant_ids)
         ):
             raise ValueError(
-                f"Evaluation row {line_number} needs relevant_chunk_ids: list[str]"
+                f"Evaluation row {line_number} has invalid relevant_chunk_ids"
+            )
+        if document_ids is not None and (
+            not isinstance(document_ids, list)
+            or not all(isinstance(item, str) for item in document_ids)
+        ):
+            raise ValueError(
+                f"Evaluation row {line_number} has invalid relevant_document_ids"
+            )
+        if not relevant_ids and not document_ids:
+            raise ValueError(
+                f"Evaluation row {line_number} needs relevant_chunk_ids or relevant_document_ids"
+            )
+        relevant_pages = row.get("relevant_page_numbers")
+        if relevant_pages is not None and (
+            not isinstance(relevant_pages, list)
+            or not all(isinstance(item, int) and item > 0 for item in relevant_pages)
+        ):
+            raise ValueError(
+                f"Evaluation row {line_number} has invalid relevant_page_numbers"
             )
         rows.append(row)
+    if not rows:
+        raise ValueError("Evaluation set is empty")
     return rows
 
 
@@ -61,9 +106,8 @@ def evaluate_retrieval(
         reciprocal_ranks = []
         for row in evaluation_rows:
             results = retriever.retrieve(row["question"], mode=mode, top_k=5)
-            relevant_ids = row["relevant_chunk_ids"]
-            hits.append(hit_at_k(results, relevant_ids, k=5))
-            reciprocal_ranks.append(reciprocal_rank(results, relevant_ids))
+            hits.append(_hit_at_k_row(results, row, k=5))
+            reciprocal_ranks.append(_reciprocal_rank_row(results, row))
         count = len(evaluation_rows)
         records.append(
             {

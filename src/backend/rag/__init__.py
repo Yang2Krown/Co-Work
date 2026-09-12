@@ -17,6 +17,7 @@ from .observability import (
 )
 from .prompt import RAGPrompt, build_prompt
 from .service import RAGService
+from ..schemas import RAGStreamEvent
 
 __all__ = [
     "ContextBuildResult",
@@ -28,6 +29,7 @@ __all__ = [
     "OpenAICompatibleClient",
     "RAGPrompt",
     "RAGService",
+    "RAGStreamEvent",
     "SemanticCache",
     "StructuredJSONFormatter",
     "build_citations",

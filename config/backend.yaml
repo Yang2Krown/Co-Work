@@ -42,6 +42,7 @@ rag:
   top_p: 0.9
   top_k: null
   low_relevance_threshold: 0.2
+  low_relevance_score_source: vector
   allow_llm_fallback: true
 
 cache:

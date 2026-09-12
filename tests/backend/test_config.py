@@ -22,6 +22,7 @@ def test_load_backend_config() -> None:
     assert config.rag.max_context_chars == 6000
     assert config.rag.top_k is None
     assert config.rag.low_relevance_threshold == 0.2
+    assert config.rag.low_relevance_score_source == "vector"
     assert config.rag.temperature == 0.2
     assert config.cache.max_entries == 256
 

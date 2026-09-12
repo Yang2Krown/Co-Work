@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterator, List, Optional, Protocol, Tuple
 from uuid import uuid4
 
 from ..exceptions import LLMServiceError
-from ..schemas import RAGResponse, RetrievalResult
+from ..schemas import RAGResponse, RAGStreamEvent, RetrievalResult
 from .cache import SemanticCache
 from .citation import build_citations
 from .context_builder import ContextBuildResult, ContextBuilder
@@ -42,12 +42,15 @@ class RAGService:
         knowledge_base_version: str = "default",
         allow_llm_fallback: bool = True,
         low_relevance_threshold: float = 0.2,
+        low_relevance_score_source: str = "vector",
         logger: Optional[logging.Logger] = None,
     ) -> None:
         if default_top_k <= 0:
             raise ValueError("default_top_k must be greater than zero")
         if low_relevance_threshold < 0:
             raise ValueError("low_relevance_threshold must be non-negative")
+        if low_relevance_score_source != "vector":
+            raise ValueError("low_relevance_score_source must be 'vector'")
         self.retriever = retriever
         self.llm_client = llm_client
         self.generation_config = generation_config or GenerationConfig()
@@ -58,15 +61,14 @@ class RAGService:
         self.knowledge_base_version = knowledge_base_version
         self.allow_llm_fallback = allow_llm_fallback
         self.low_relevance_threshold = low_relevance_threshold
+        self.low_relevance_score_source = low_relevance_score_source
         self.logger = logger or logging.getLogger("backend.rag")
 
     @staticmethod
     def _score(result: RetrievalResult) -> Optional[float]:
-        for field in ("rerank_score", "vector_score", "rrf_score", "bm25_score"):
-            value = getattr(result, field)
-            if value is not None:
-                return float(value)
-        return None
+        # The threshold is deliberately defined only on the vector store's
+        # cosine score. BM25, RRF and reranker scores have different scales.
+        return None if result.vector_score is None else float(result.vector_score)
 
     def _is_low_relevance(self, results: List[RetrievalResult]) -> bool:
         if not results or self.low_relevance_threshold == 0:
@@ -311,6 +313,73 @@ class RAGService:
             fallback_used,
             error,
         )
+
+    def stream_answer_events(
+        self,
+        question: str,
+        top_k: Optional[int] = None,
+        request_id: Optional[str] = None,
+    ) -> Iterator[RAGStreamEvent]:
+        """Yield structured streaming events with retrieval-grounded metadata.
+
+        ``stream_answer`` remains the backward-compatible text-only interface.
+        Citation data is copied from retrieved chunks before generation and is
+        never parsed from, or inferred from, model output.
+        """
+
+        started = perf_counter()
+        request_id = request_id or str(uuid4())
+        effective_top_k = self.default_top_k if top_k is None else top_k
+        if effective_top_k <= 0:
+            raise ValueError("top_k must be greater than zero")
+
+        results, context, prompt, _ = self._prepare(question, top_k)
+        citations = build_citations(context.chunks)
+        yield RAGStreamEvent(
+            event="metadata",
+            request_id=request_id,
+            citations=citations,
+            retrieved_chunks=context.chunks,
+        )
+
+        fallback_used = not results
+        answer_parts: List[str] = []
+        error: Optional[str] = None
+        if fallback_used and not self.allow_llm_fallback:
+            answer = "当前知识库中未找到相关文档，无法基于知识库回答。"
+            answer_parts.append(answer)
+            yield RAGStreamEvent(event="token", request_id=request_id, text=answer)
+        else:
+            try:
+                for fragment in self.llm_client.stream(prompt, self.generation_config):
+                    answer_parts.append(fragment)
+                    yield RAGStreamEvent(
+                        event="token",
+                        request_id=request_id,
+                        text=fragment,
+                    )
+            except Exception as exc:  # noqa: BLE001 - provider failures are surfaced as events.
+                error = f"{type(exc).__name__}: {exc}"
+                answer = "生成服务暂时不可用，请稍后重试。"
+                answer_parts.append(answer)
+                yield RAGStreamEvent(
+                    event="error",
+                    request_id=request_id,
+                    text=answer,
+                    error=error,
+                )
+
+        self._log(
+            request_id,
+            question,
+            effective_top_k,
+            results,
+            "".join(answer_parts),
+            started,
+            fallback_used,
+            error,
+        )
+        yield RAGStreamEvent(event="end", request_id=request_id, error=error)
 
 
 __all__ = ["RAGService", "RetrieverLike"]

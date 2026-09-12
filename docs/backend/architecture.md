@@ -38,9 +38,9 @@ HybridRetriever
     ↓
 ContextBuilder → bounded, deduplicated, source-labelled context
     ↓
-Prompt + OpenAI-compatible LLMClient
+    Prompt + OpenAI-compatible LLMClient
     ├─ answer → RAGResponse
-    └─ stream → text fragments
+    └─ stream → text fragments or structured metadata/token/end/error events
     ↓
 Citation + structured request log
 ```
@@ -54,14 +54,16 @@ Citation + structured request log
 | Retrieval | `HybridRetriever.retrieve()` | Returns `RetrievalResult` only |
 | Context | `ContextBuilder.build()` | Bounds and traces chunks before generation |
 | LLM | `LLMClient.generate/stream()` | Network call only when explicitly invoked |
-| RAG | `RAGService.answer/stream_answer()` | Orchestrates retrieval, generation, citation and safeguards |
+| RAG | `RAGService.answer/stream_answer()/stream_answer_events()` | Orchestrates retrieval, generation, citation and safeguards |
 
 All cross-layer data uses the schemas in `src/backend/schemas/models.py`.
 
 ## Configuration and runtime safety
 
-Adjustable values live in `config/backend.yaml`. The default test suite injects
-small fake models and does not download weights or call an API. Real model checks
+Adjustable values live in `config/backend.yaml`. The
+`rag.low_relevance_threshold` is a vector cosine-score threshold only, and
+`rag.low_relevance_score_source` is currently `vector`. The default test suite
+injects small fake models and does not download weights or call an API. Real model checks
 are opt-in through `scripts/smoke_test_retrieval.py`. API keys are read from the
 environment and are never included in structured log fields.
 

@@ -1,6 +1,6 @@
 """Typed data structures for document, retrieval, and RAG boundaries."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,4 +58,22 @@ class RAGResponse(_SchemaModel):
     error: Optional[str] = None
 
 
-__all__ = ["Citation", "Chunk", "Document", "RAGResponse", "RetrievalResult"]
+class RAGStreamEvent(_SchemaModel):
+    """Structured, transport-neutral event emitted by RAG streaming."""
+
+    event: Literal["metadata", "token", "end", "error"]
+    request_id: str
+    text: Optional[str] = None
+    citations: List[Citation] = Field(default_factory=list)
+    retrieved_chunks: List[RetrievalResult] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+__all__ = [
+    "Citation",
+    "Chunk",
+    "Document",
+    "RAGResponse",
+    "RAGStreamEvent",
+    "RetrievalResult",
+]

@@ -1,7 +1,7 @@
 """Typed loading for the backend YAML configuration."""
 
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Literal, Mapping, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -64,6 +64,7 @@ class RagConfig(_ConfigModel):
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: Optional[int] = Field(default=None, gt=0)
     low_relevance_threshold: float = Field(default=0.2, ge=0)
+    low_relevance_score_source: Literal["vector"] = "vector"
     allow_llm_fallback: bool = True
 
 

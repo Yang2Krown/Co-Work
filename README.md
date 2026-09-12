@@ -56,11 +56,14 @@ hybrid_rerank  hybrid + reranker
 ## RAG configuration
 
 RAG 参数位于 `config/backend.yaml`，包括 LLM provider/model、API endpoint、
-超时、上下文上限、生成参数、低相关阈值、缓存和 fallback 开关。复制环境模板
-并填写本地密钥：
+超时、上下文上限、生成参数、低相关阈值、缓存和 fallback 开关。项目不使用
+`python-dotenv`。复制环境模板并填写本地密钥后，在 macOS/Linux 中可以使用
+`source .env`，或显式导出变量：
 
 ```bash
 cp .env.example .env
+source .env
+# 或：export OPENAI_API_KEY=your-api-key
 ```
 
 当前 OpenAI-compatible client 读取 `OPENAI_API_KEY`。API key 不写入 YAML、
@@ -75,6 +78,17 @@ response = rag_service.answer("我的问题", top_k=5)
 for fragment in rag_service.stream_answer("我的问题", top_k=5):
     print(fragment, end="", flush=True)
 ```
+
+需要在流式响应中传递引用时，使用向后兼容的结构化事件接口：
+
+```python
+for event in rag_service.stream_answer_events("我的问题", top_k=5):
+    # event.event: metadata | token | end | error
+    consume(event)
+```
+
+首个 `metadata` 事件包含从检索结果复制的真实 `citations`、
+`retrieved_chunks` 和 `request_id`。
 
 `RAGResponse` 包含 `answer`、`citations`、`retrieved_chunks`、`latency_ms`、
 可获得的 `token_usage`、`fallback_used` 和错误时的 `error`。

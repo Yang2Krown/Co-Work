@@ -59,6 +59,12 @@ error              str | null
 `file_name`, `page_number` and `chunk_id` are copied from retrieved data. A
 missing page remains `null` and is never inferred.
 
+Low-relevance protection compares `rag.low_relevance_threshold` only with the
+retrieved vector cosine score. Its configured source is
+`rag.low_relevance_score_source: vector`; BM25, RRF and reranker scores are not
+compared with this threshold. If no vector score is present, no low-relevance
+flag is forced.
+
 ## Streaming answer
 
 ```python
@@ -69,6 +75,21 @@ for fragment in rag_service.stream_answer("问题", top_k=5):
 The generator yields text fragments. The caller owns presentation concerns such
 as a typewriter effect or SSE conversion. Provider failures yield a friendly
 error message and are recorded by the backend logger.
+
+For transports that need citations during streaming, use the additive
+structured interface:
+
+```python
+for event in rag_service.stream_answer_events("问题", top_k=5):
+    # event.event is one of: metadata, token, end, error
+    consume(event)
+```
+
+Every event contains `request_id`. The first `metadata` event contains
+`citations` and `retrieved_chunks`, copied from retrieval metadata before the
+LLM runs. Citation page numbers are never generated or inferred by the LLM.
+`token` events carry `text`; provider failures are represented by an `error`
+event and the stream terminates with `end`.
 
 ## Construction and configuration
 
@@ -100,6 +121,7 @@ rag_service = RAGService(
     retrieval_mode="hybrid_rerank",
     allow_llm_fallback=config.rag.allow_llm_fallback,
     low_relevance_threshold=config.rag.low_relevance_threshold,
+    low_relevance_score_source=config.rag.low_relevance_score_source,
 )
 ```
 
