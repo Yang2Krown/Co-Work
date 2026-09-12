@@ -31,8 +31,16 @@ retrieval:
   reranker_batch_size: 16
 
 rag:
+  provider: openai_compatible
+  model_name: gpt-4o-mini
+  api_base: https://api.openai.com/v1
+  api_key_env: OPENAI_API_KEY
+  timeout_seconds: 60
+  max_context_chars: 6000
+  max_output_tokens: 512
   temperature: 0.2
   top_p: 0.9
+  top_k: null
   allow_llm_fallback: true
 
 cache:

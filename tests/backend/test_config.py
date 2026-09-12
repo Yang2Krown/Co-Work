@@ -18,6 +18,9 @@ def test_load_backend_config() -> None:
     assert config.retrieval.enable_rrf is True
     assert config.retrieval.bm25_top_k == 20
     assert config.retrieval.reranker_model_name == "bge-reranker-base"
+    assert config.rag.provider == "openai_compatible"
+    assert config.rag.max_context_chars == 6000
+    assert config.rag.top_k is None
     assert config.rag.temperature == 0.2
 
 
