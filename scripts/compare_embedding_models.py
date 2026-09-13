@@ -38,8 +38,11 @@ def _matches(result: Any, row: Dict[str, Any]) -> bool:
 def _quality(retriever: VectorRetriever, rows: Sequence[Dict[str, Any]]) -> Dict[str, float]:
     hits: List[float] = []
     reciprocal_ranks: List[float] = []
+    query_latencies: List[float] = []
     for row in rows:
+        query_started = perf_counter()
         results = retriever.retrieve(row["question"], top_k=5)
+        query_latencies.append((perf_counter() - query_started) * 1000)
         hits.append(float(any(_matches(result, row) for result in results)))
         rank_score = 0.0
         for rank, result in enumerate(results, start=1):
@@ -52,6 +55,7 @@ def _quality(retriever: VectorRetriever, rows: Sequence[Dict[str, Any]]) -> Dict
         "query_count": count,
         "hit_at_5": sum(hits) / count,
         "mrr": sum(reciprocal_ranks) / count,
+        "average_query_ms": sum(query_latencies) / count,
     }
 
 
@@ -79,33 +83,45 @@ def compare(
     records: List[Dict[str, Any]] = []
     for model_name in models:
         before_rss = _max_rss_bytes()
-        service = EmbeddingService(
-            model_name=model_name,
-            batch_size=config.embedding.batch_size,
-            normalize_embeddings=config.embedding.normalize_embeddings,
-        )
-        cold_started = perf_counter()
-        embeddings = service.embed_documents(texts)
-        cold_ms = (perf_counter() - cold_started) * 1000
-        warm_started = perf_counter()
-        service.embed_documents(texts)
-        warm_ms = (perf_counter() - warm_started) * 1000
-        after_rss = _max_rss_bytes()
-        store = InMemoryVectorStore()
-        store.add_chunks(chunks, embeddings)
-        retriever = VectorRetriever(store, service, top_k=config.retrieval.vector_top_k)
-        record: Dict[str, Any] = {
-            "model": model_name,
-            "resolved_model": service.resolved_model_name,
-            "chunk_count": len(chunks),
-            "embedding_dimension": service.last_stats.dimension if service.last_stats else 0,
-            "cold_first_run_ms": cold_ms,
-            "warm_inference_ms": warm_ms,
-            "warm_items_per_second": len(texts) / max(warm_ms / 1000, 1e-12),
-            "max_rss_delta_bytes": max(0, after_rss - before_rss),
-        }
-        if evaluation_rows is not None:
-            record["retrieval_quality"] = _quality(retriever, evaluation_rows)
+        try:
+            service = EmbeddingService(
+                model_name=model_name,
+                batch_size=config.embedding.batch_size,
+                normalize_embeddings=config.embedding.normalize_embeddings,
+            )
+            cold_load_started = perf_counter()
+            service._get_model()
+            cold_load_ms = (perf_counter() - cold_load_started) * 1000
+            first_started = perf_counter()
+            embeddings = service.embed_documents(texts)
+            first_batch_ms = (perf_counter() - first_started) * 1000
+            warm_started = perf_counter()
+            service.embed_documents(texts)
+            warm_ms = (perf_counter() - warm_started) * 1000
+            after_rss = _max_rss_bytes()
+            store = InMemoryVectorStore()
+            store.add_chunks(chunks, embeddings)
+            retriever = VectorRetriever(store, service, top_k=config.retrieval.vector_top_k)
+            record: Dict[str, Any] = {
+                "status": "passed",
+                "model": model_name,
+                "resolved_model": service.resolved_model_name,
+                "chunk_count": len(chunks),
+                "embedding_dimension": service.last_stats.dimension if service.last_stats else 0,
+                "cold_load_ms": cold_load_ms,
+                "cold_first_batch_embedding_ms": first_batch_ms,
+                "warm_embedding_ms": warm_ms,
+                "warm_items_per_second": len(texts) / max(warm_ms / 1000, 1e-12),
+                "max_rss_delta_bytes": max(0, after_rss - before_rss),
+            }
+            if evaluation_rows is not None:
+                record["retrieval_quality"] = _quality(retriever, evaluation_rows)
+        except Exception as exc:  # noqa: BLE001 - preserve results from other models.
+            record = {
+                "status": "failed",
+                "model": model_name,
+                "error": f"{exc.__class__.__name__}: {exc}",
+            }
         records.append(record)
     return {"records": records}
 
@@ -116,9 +132,25 @@ def main() -> int:
     parser.add_argument("--models", nargs="+", default=["bge-large-zh", "m3e-base"])
     parser.add_argument("--evaluation", type=Path, help="Optional real JSONL QA set")
     parser.add_argument("--config", type=Path, default=Path("config/backend.yaml"))
+    parser.add_argument("--chunking-strategy", default=None)
+    parser.add_argument("--chunk-size", type=int, default=None)
+    parser.add_argument("--chunk-overlap", type=int, default=None)
     parser.add_argument("--output", type=Path, help="Optional JSON output path")
     args = parser.parse_args()
     config = load_config(args.config)
+    if args.chunking_strategy or args.chunk_size or args.chunk_overlap is not None:
+        chunking = config.chunking.model_copy(
+            update={
+                key: value
+                for key, value in {
+                    "strategy": args.chunking_strategy,
+                    "chunk_size": args.chunk_size,
+                    "chunk_overlap": args.chunk_overlap,
+                }.items()
+                if value is not None
+            }
+        )
+        config = config.model_copy(update={"chunking": chunking})
     rows = None
     if args.evaluation:
         from scripts.evaluate_retrieval import load_evaluation_set

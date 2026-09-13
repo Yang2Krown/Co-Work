@@ -34,7 +34,7 @@ hybrid          vector + BM25 + RRF
 hybrid_rerank  hybrid + reranker
 ```
 
-有真实 JSONL 评测集后，可运行：
+使用真实 JSONL 评测集可运行：
 
 ```bash
 .venv/bin/python scripts/evaluate_retrieval.py \
@@ -43,8 +43,8 @@ hybrid_rerank  hybrid + reranker
   --output /tmp/retrieval-results.json
 ```
 
-没有真实评测集时，脚本不会伪造 Hit@5 或 MRR。真实 embedding、Chroma、FAISS
-和 reranker smoke test 是独立脚本，不属于默认 pytest：
+评测脚本只根据提供的真实 JSONL 计算 Hit@5/MRR，不会伪造指标。真实 embedding、
+Chroma、FAISS 和 reranker smoke test 是独立脚本，不属于默认 pytest：
 
 ```bash
 .venv/bin/python scripts/smoke_test_retrieval.py \
@@ -95,9 +95,19 @@ for event in rag_service.stream_answer_events("我的问题", top_k=5):
 
 ## Backend documentation
 
+Final Experiment 使用 5 篇 Transformer 论文和 20 条人工核验 QA，运行环境为
+Python 3.11.16；真实结果和原始 JSON 见以下文档与链接。
+
 - [架构说明](docs/backend/architecture.md)
 - [集成契约](docs/backend/integration_contract.md)
 - [分块实验](docs/backend/chunking_experiment.md)
 - [检索实验](docs/backend/retrieval_experiment.md)
+- [PDF Loader 与 Embedding 对比实验](docs/backend/model_and_loader_experiment.md)
+
+实验原始 JSON：
+[PDF loaders](docs/backend/results/pdf_loaders.json) ·
+[chunking](docs/backend/results/chunking.json) ·
+[embedding models](docs/backend/results/embedding_models.json) ·
+[retrieval](docs/backend/results/retrieval.json)
 
 后端不负责 Streamlit/Gradio 页面、Agent ReAct 循环、工具路由或最终系统级评测。

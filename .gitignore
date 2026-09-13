@@ -15,6 +15,9 @@ data/processed/*
 data/indexes/*
 !data/indexes/.gitkeep
 
+data/samples/papers/*
+!data/samples/papers/.gitkeep
+
 logs/
 .cache/
 *.log

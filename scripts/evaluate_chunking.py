@@ -10,6 +10,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, Iterable, List, Sequence
 
 
@@ -97,6 +98,7 @@ def evaluate(paths: Iterable[Path], strategies: Iterable[str], sizes: Iterable[i
                         "min_chars": min(lengths) if lengths else 0,
                         "max_chars": max(lengths) if lengths else 0,
                         "avg_chars": (sum(lengths) / len(lengths)) if lengths else 0,
+                        "avg_chunk_length": (sum(lengths) / len(lengths)) if lengths else 0,
                     }
                 )
     return {"records": records, "errors": errors}
@@ -132,17 +134,22 @@ def _evaluate_vector_quality(
                     chunk_overlap=overlap,
                 )
             ]
+            index_started = perf_counter()
             embedding_service = EmbeddingService(model_name=embedding_model)
             store = InMemoryVectorStore()
             store.add_chunks(
                 chunks,
                 embedding_service.embed_documents([chunk.text for chunk in chunks]),
             )
+            index_build_ms = (perf_counter() - index_started) * 1000
             retriever = VectorRetriever(store, embedding_service, top_k=5)
             hits: List[float] = []
             reciprocal_ranks: List[float] = []
+            query_latencies: List[float] = []
             for row in evaluation_rows:
+                query_started = perf_counter()
                 results = retriever.retrieve(row["question"], top_k=5)
+                query_latencies.append((perf_counter() - query_started) * 1000)
                 hits.append(float(any(_result_matches(result, row) for result in results)))
                 reciprocal_rank = 0.0
                 for rank, result in enumerate(results, start=1):
@@ -156,10 +163,18 @@ def _evaluate_vector_quality(
                     "strategy": strategy,
                     "chunk_size": size,
                     "chunk_overlap": overlap,
+                    "chunk_count": len(chunks),
+                    "avg_chunk_length": (
+                        sum(len(chunk.text) for chunk in chunks) / len(chunks)
+                        if chunks
+                        else 0
+                    ),
                     "embedding_model": embedding_model,
                     "query_count": count,
                     "hit_at_5": sum(hits) / count,
                     "mrr": sum(reciprocal_ranks) / count,
+                    "index_build_ms": index_build_ms,
+                    "average_query_ms": sum(query_latencies) / count,
                 }
             )
     return records

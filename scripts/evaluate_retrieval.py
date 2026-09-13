@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, Iterable, List, Sequence
 
 
@@ -54,6 +55,17 @@ def _reciprocal_rank_row(results: Sequence[Any], row: Dict[str, Any]) -> float:
     return 0.0
 
 
+def _percentile(values: Sequence[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+
 def load_evaluation_set(path: Path) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -99,24 +111,50 @@ def load_evaluation_set(path: Path) -> List[Dict[str, Any]]:
 def evaluate_retrieval(
     retriever: HybridRetriever,
     evaluation_rows: Sequence[Dict[str, Any]],
+    chunking_strategy: str = "configured",
+    chunk_size: int = 0,
+    chunk_overlap: int = 0,
 ) -> Dict[str, Any]:
     records = []
     for mode in ("vector", "hybrid", "hybrid_rerank"):
         hits = []
         reciprocal_ranks = []
+        query_latencies = []
         for row in evaluation_rows:
+            started = perf_counter()
             results = retriever.retrieve(row["question"], mode=mode, top_k=5)
+            query_latencies.append((perf_counter() - started) * 1000)
             hits.append(_hit_at_k_row(results, row, k=5))
             reciprocal_ranks.append(_reciprocal_rank_row(results, row))
         count = len(evaluation_rows)
-        records.append(
-            {
-                "mode": mode,
-                "query_count": count,
-                "hit_at_5": sum(hits) / count if count else 0.0,
-                "mrr": sum(reciprocal_ranks) / count if count else 0.0,
-            }
-        )
+        record: Dict[str, Any] = {
+            "mode": mode,
+            "query_count": count,
+            "top_k": 5,
+            "embedding_model": getattr(
+                getattr(retriever.vector_retriever, "embedding_service", None),
+                "model_name",
+                None,
+            ),
+            "reranker_model": getattr(retriever.reranker, "model_name", None),
+            "vector_store": type(retriever.vector_retriever.vector_store).__name__,
+            "chunking_strategy": chunking_strategy,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+            "hit_at_5": sum(hits) / count if count else 0.0,
+            "mrr": sum(reciprocal_ranks) / count if count else 0.0,
+            "average_query_ms": sum(query_latencies) / count if count else 0.0,
+            "p50_query_ms": _percentile(query_latencies, 0.50),
+            "p95_query_ms": _percentile(query_latencies, 0.95),
+        }
+        if mode == "hybrid_rerank" and query_latencies:
+            record["cold_first_query_ms"] = query_latencies[0]
+            record["warm_average_query_ms"] = (
+                sum(query_latencies[1:]) / len(query_latencies[1:])
+                if len(query_latencies) > 1
+                else query_latencies[0]
+            )
+        records.append(record)
     return {"records": records}
 
 
@@ -172,13 +210,55 @@ def main() -> int:
     parser.add_argument("documents", nargs="+", type=Path)
     parser.add_argument("--evaluation", type=Path, required=True)
     parser.add_argument("--config", type=Path, default=Path("config/backend.yaml"))
+    parser.add_argument("--embedding-model", help="Override the configured embedding alias")
+    parser.add_argument("--reranker-model", help="Override the configured reranker alias")
+    parser.add_argument("--chunking-strategy", help="Strategy used to create evaluation chunks")
+    parser.add_argument("--chunk-size", type=int, help="Chunk size used to create evaluation chunks")
+    parser.add_argument("--chunk-overlap", type=int, help="Chunk overlap used to create evaluation chunks")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     config = load_config(args.config)
+    if any(
+        value is not None
+        for value in (
+            args.embedding_model,
+            args.reranker_model,
+            args.chunking_strategy,
+            args.chunk_size,
+            args.chunk_overlap,
+        )
+    ):
+        embedding = config.embedding.model_copy(
+            update={"model_name": args.embedding_model}
+            if args.embedding_model
+            else {}
+        )
+        retrieval = config.retrieval.model_copy(
+            update={"reranker_model_name": args.reranker_model}
+            if args.reranker_model
+            else {}
+        )
+        chunking = config.chunking.model_copy(
+            update={
+                key: value
+                for key, value in {
+                    "strategy": args.chunking_strategy,
+                    "chunk_size": args.chunk_size,
+                    "chunk_overlap": args.chunk_overlap,
+                }.items()
+                if value is not None
+            }
+        )
+        config = config.model_copy(
+            update={"embedding": embedding, "retrieval": retrieval, "chunking": chunking}
+        )
     report = evaluate_retrieval(
         _build_retriever(args.documents, config),
         load_evaluation_set(args.evaluation),
+        chunking_strategy=config.chunking.strategy,
+        chunk_size=config.chunking.chunk_size,
+        chunk_overlap=config.chunking.chunk_overlap,
     )
     serialized = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:

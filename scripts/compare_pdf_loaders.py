@@ -1,6 +1,7 @@
 """Compare measured extraction output from the supported PDF loaders."""
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -13,6 +14,22 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.backend.loaders import PDF_ENGINES, load_pdf
+
+
+def _text_anomalies(text: str) -> List[str]:
+    """Report deterministic extraction anomalies without judging content quality."""
+
+    anomalies: List[str] = []
+    if not text.strip():
+        anomalies.append("empty_text")
+    if "\ufffd" in text:
+        anomalies.append("replacement_character")
+    control_count = sum(
+        1 for character in text if ord(character) < 32 and character not in "\n\r\t\f"
+    )
+    if control_count:
+        anomalies.append(f"control_characters:{control_count}")
+    return anomalies
 
 
 def compare(paths: Iterable[Path], engines: Iterable[str]) -> Dict[str, Any]:
@@ -35,6 +52,10 @@ def compare(paths: Iterable[Path], engines: Iterable[str]) -> Dict[str, Any]:
                         "page_count": len(page_texts),
                         "nonempty_page_count": sum(bool(text.strip()) for text in page_texts),
                         "character_count": len(document.text),
+                        "text_sha256": hashlib.sha256(
+                            document.text.encode("utf-8")
+                        ).hexdigest(),
+                        "text_anomalies": _text_anomalies(document.text),
                     }
                 )
             except Exception as exc:  # noqa: BLE001 - one engine must not hide another.

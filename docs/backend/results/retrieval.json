@@ -1,0 +1,54 @@
+{
+  "records": [
+    {
+      "mode": "vector",
+      "query_count": 20,
+      "top_k": 5,
+      "embedding_model": "bge-large-zh",
+      "reranker_model": "bge-reranker-base",
+      "vector_store": "InMemoryVectorStore",
+      "chunking_strategy": "structure",
+      "chunk_size": 512,
+      "chunk_overlap": 64,
+      "hit_at_5": 0.75,
+      "mrr": 0.5725,
+      "average_query_ms": 31.576312542892992,
+      "p50_query_ms": 31.684562447480857,
+      "p95_query_ms": 34.86397435190156
+    },
+    {
+      "mode": "hybrid",
+      "query_count": 20,
+      "top_k": 5,
+      "embedding_model": "bge-large-zh",
+      "reranker_model": "bge-reranker-base",
+      "vector_store": "InMemoryVectorStore",
+      "chunking_strategy": "structure",
+      "chunk_size": 512,
+      "chunk_overlap": 64,
+      "hit_at_5": 0.8,
+      "mrr": 0.6475,
+      "average_query_ms": 34.13028117502108,
+      "p50_query_ms": 33.19841646589339,
+      "p95_query_ms": 41.281270852778114
+    },
+    {
+      "mode": "hybrid_rerank",
+      "query_count": 20,
+      "top_k": 5,
+      "embedding_model": "bge-large-zh",
+      "reranker_model": "bge-reranker-base",
+      "vector_store": "InMemoryVectorStore",
+      "chunking_strategy": "structure",
+      "chunk_size": 512,
+      "chunk_overlap": 64,
+      "hit_at_5": 0.85,
+      "mrr": 0.7141666666666666,
+      "average_query_ms": 987.3983186436817,
+      "p50_query_ms": 487.0434374315664,
+      "p95_query_ms": 1091.7690234957333,
+      "cold_first_query_ms": 10465.935624903068,
+      "warm_average_query_ms": 488.527934103714
+    }
+  ]
+}
