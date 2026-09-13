@@ -1,0 +1,40 @@
+{
+  "records": [
+    {
+      "status": "passed",
+      "model": "m3e-base",
+      "resolved_model": "moka-ai/m3e-base",
+      "chunk_count": 1079,
+      "embedding_dimension": 768,
+      "cold_load_ms": 12167.036290979013,
+      "cold_first_batch_embedding_ms": 39507.48054101132,
+      "warm_embedding_ms": 41993.39191708714,
+      "warm_items_per_second": 25.694518845498504,
+      "max_rss_delta_bytes": 620199936,
+      "retrieval_quality": {
+        "query_count": 20,
+        "hit_at_5": 0.7,
+        "mrr": 0.5433333333333332,
+        "average_query_ms": 16.882881161291152
+      }
+    },
+    {
+      "status": "passed",
+      "model": "bge-large-zh",
+      "resolved_model": "BAAI/bge-large-zh-v1.5",
+      "chunk_count": 1079,
+      "embedding_dimension": 1024,
+      "cold_load_ms": 218330.2316670306,
+      "cold_first_batch_embedding_ms": 101864.55141683109,
+      "warm_embedding_ms": 184510.64845803194,
+      "warm_items_per_second": 5.847900969495671,
+      "max_rss_delta_bytes": 1303773184,
+      "retrieval_quality": {
+        "query_count": 20,
+        "hit_at_5": 0.75,
+        "mrr": 0.5725,
+        "average_query_ms": 47.793077246751636
+      }
+    }
+  ]
+}

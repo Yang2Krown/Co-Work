@@ -1,0 +1,198 @@
+{
+  "records": [
+    {
+      "path": "data/samples/papers/1-s2.0-S2666651022000146-main.pdf",
+      "engine": "pypdf2",
+      "success": true,
+      "document_id": "b37126a2c5be0d5435412969cebec09e54a6af3f90a2c013b2b42449e18b8eb8",
+      "page_count": 22,
+      "nonempty_page_count": 22,
+      "character_count": 139773,
+      "text_sha256": "d0a4e72db9217f0d64bdb06c949c12d4760a7de35633b0cbe923a22eda0fddec",
+      "text_anomalies": [],
+      "elapsed_ms": 730.3648341912776
+    },
+    {
+      "path": "data/samples/papers/1-s2.0-S2666651022000146-main.pdf",
+      "engine": "pdfplumber",
+      "success": true,
+      "document_id": "b37126a2c5be0d5435412969cebec09e54a6af3f90a2c013b2b42449e18b8eb8",
+      "page_count": 22,
+      "nonempty_page_count": 22,
+      "character_count": 131593,
+      "text_sha256": "465956e6eeea7ae23dbd7c1002fa9890189e7e95e4f38ac2f19240f5e3265b54",
+      "text_anomalies": [],
+      "elapsed_ms": 2830.4265420883894
+    },
+    {
+      "path": "data/samples/papers/1-s2.0-S2666651022000146-main.pdf",
+      "engine": "pymupdf",
+      "success": true,
+      "document_id": "b37126a2c5be0d5435412969cebec09e54a6af3f90a2c013b2b42449e18b8eb8",
+      "page_count": 22,
+      "nonempty_page_count": 22,
+      "character_count": 140215,
+      "text_sha256": "1b2ff3ebbe2dcf512671dda12b58c24286820ce02ebc1740dc6c5108c6fd6871",
+      "text_anomalies": [],
+      "elapsed_ms": 372.17341689392924
+    },
+    {
+      "path": "data/samples/papers/2006.16236v3.pdf",
+      "engine": "pypdf2",
+      "success": true,
+      "document_id": "2e655ef4a8d85428b576c8e0827d68f1c97950318ba03c9887c5b019a9a332fd",
+      "page_count": 17,
+      "nonempty_page_count": 17,
+      "character_count": 52424,
+      "text_sha256": "d4b4c27445862c80484d7214af541450bafa330694bf080a2d1ceb77dc268e7c",
+      "text_anomalies": [
+        "control_characters:185"
+      ],
+      "elapsed_ms": 103.30812493339181
+    },
+    {
+      "path": "data/samples/papers/2006.16236v3.pdf",
+      "engine": "pdfplumber",
+      "success": true,
+      "document_id": "2e655ef4a8d85428b576c8e0827d68f1c97950318ba03c9887c5b019a9a332fd",
+      "page_count": 17,
+      "nonempty_page_count": 17,
+      "character_count": 48387,
+      "text_sha256": "e8adb719ef2e41a6fe44ae5b26732c88ed68ece372c5c9eccb21039727a8c3ed",
+      "text_anomalies": [],
+      "elapsed_ms": 561.3314169459045
+    },
+    {
+      "path": "data/samples/papers/2006.16236v3.pdf",
+      "engine": "pymupdf",
+      "success": true,
+      "document_id": "2e655ef4a8d85428b576c8e0827d68f1c97950318ba03c9887c5b019a9a332fd",
+      "page_count": 17,
+      "nonempty_page_count": 17,
+      "character_count": 52999,
+      "text_sha256": "c3c58a2b96a3b03c9f2f1e533393ac1b178788365c1ef65707b1c52a1669150b",
+      "text_anomalies": [
+        "control_characters:30"
+      ],
+      "elapsed_ms": 44.1295001655817
+    },
+    {
+      "path": "data/samples/papers/2009.06732v3.pdf",
+      "engine": "pypdf2",
+      "success": true,
+      "document_id": "d4f2425d4487fa3097d1c0f274df161901748a40f10877cdc5447d711ea2ef35",
+      "page_count": 39,
+      "nonempty_page_count": 39,
+      "character_count": 106793,
+      "text_sha256": "b8ca1cbb5051d6b362bc1a0748a4b6b3b8f0085c4e131a4158f88fac0c5566f6",
+      "text_anomalies": [
+        "control_characters:302"
+      ],
+      "elapsed_ms": 238.44862496480346
+    },
+    {
+      "path": "data/samples/papers/2009.06732v3.pdf",
+      "engine": "pdfplumber",
+      "success": true,
+      "document_id": "d4f2425d4487fa3097d1c0f274df161901748a40f10877cdc5447d711ea2ef35",
+      "page_count": 39,
+      "nonempty_page_count": 39,
+      "character_count": 107324,
+      "text_sha256": "6ef73167ba66f03429196634a3707898985c713aea6702240c33de86871c87c4",
+      "text_anomalies": [],
+      "elapsed_ms": 1229.9813330173492
+    },
+    {
+      "path": "data/samples/papers/2009.06732v3.pdf",
+      "engine": "pymupdf",
+      "success": true,
+      "document_id": "d4f2425d4487fa3097d1c0f274df161901748a40f10877cdc5447d711ea2ef35",
+      "page_count": 39,
+      "nonempty_page_count": 39,
+      "character_count": 107421,
+      "text_sha256": "28adecc15f4ad1a4df1a5385889d6caf3038a454d64e9301804134f19bb5d616",
+      "text_anomalies": [
+        "control_characters:10"
+      ],
+      "elapsed_ms": 81.39208285138011
+    },
+    {
+      "path": "data/samples/papers/2103.00112v3.pdf",
+      "engine": "pypdf2",
+      "success": true,
+      "document_id": "9100e100bf55ad79f43b8c7356269d046127e77ac5d2dffcf3ae286d1e8409d0",
+      "page_count": 14,
+      "nonempty_page_count": 14,
+      "character_count": 42299,
+      "text_sha256": "556c90ce7b136788a30fcb75089d2b28002cc6726ea4c98b64bc61cda47cf8bd",
+      "text_anomalies": [
+        "control_characters:95"
+      ],
+      "elapsed_ms": 180.87612511590123
+    },
+    {
+      "path": "data/samples/papers/2103.00112v3.pdf",
+      "engine": "pdfplumber",
+      "success": true,
+      "document_id": "9100e100bf55ad79f43b8c7356269d046127e77ac5d2dffcf3ae286d1e8409d0",
+      "page_count": 14,
+      "nonempty_page_count": 14,
+      "character_count": 38236,
+      "text_sha256": "c082cd7a76357c8a637774affc00f1a1ab011ee86c4710339907290ccf2a08e9",
+      "text_anomalies": [],
+      "elapsed_ms": 634.800124913454
+    },
+    {
+      "path": "data/samples/papers/2103.00112v3.pdf",
+      "engine": "pymupdf",
+      "success": true,
+      "document_id": "9100e100bf55ad79f43b8c7356269d046127e77ac5d2dffcf3ae286d1e8409d0",
+      "page_count": 14,
+      "nonempty_page_count": 14,
+      "character_count": 42529,
+      "text_sha256": "f94402a99549020363a45cfcdcceff4aba10c3222712d20298cc6df3ecf14429",
+      "text_anomalies": [],
+      "elapsed_ms": 47.97687497921288
+    },
+    {
+      "path": "data/samples/papers/2203.00555v1.pdf",
+      "engine": "pypdf2",
+      "success": true,
+      "document_id": "be1944f5a461dbb075d59f35594a7e8315ef10f73673a3bdabf759fad07e04a9",
+      "page_count": 22,
+      "nonempty_page_count": 22,
+      "character_count": 121288,
+      "text_sha256": "1a251bd075f3ba6804fa9e31635f38ef72c07b4108ce9c880c7cfdbf60f9b3d1",
+      "text_anomalies": [
+        "control_characters:473"
+      ],
+      "elapsed_ms": 732.6943329535425
+    },
+    {
+      "path": "data/samples/papers/2203.00555v1.pdf",
+      "engine": "pdfplumber",
+      "success": true,
+      "document_id": "be1944f5a461dbb075d59f35594a7e8315ef10f73673a3bdabf759fad07e04a9",
+      "page_count": 22,
+      "nonempty_page_count": 22,
+      "character_count": 103463,
+      "text_sha256": "dab9ce2529f940fa137bb96d4806e0375d470954a35fbaf666ee77c09552b04e",
+      "text_anomalies": [],
+      "elapsed_ms": 2597.9528329335153
+    },
+    {
+      "path": "data/samples/papers/2203.00555v1.pdf",
+      "engine": "pymupdf",
+      "success": true,
+      "document_id": "be1944f5a461dbb075d59f35594a7e8315ef10f73673a3bdabf759fad07e04a9",
+      "page_count": 22,
+      "nonempty_page_count": 22,
+      "character_count": 122187,
+      "text_sha256": "36d8b96f0f50a29cb4e5949b50ed3a528b2031b33681ee2fa4b5b12e6b2806e2",
+      "text_anomalies": [
+        "control_characters:4"
+      ],
+      "elapsed_ms": 109.86291687004268
+    }
+  ]
+}
