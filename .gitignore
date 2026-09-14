@@ -15,12 +15,6 @@ data/processed/*
 data/indexes/*
 !data/indexes/.gitkeep
 
-data/samples/papers/*
-!data/samples/papers/.gitkeep
-
-# Agent live-demo corpus is local-only and must never enter GitHub.
-data/samples/papers_recent/
-
 logs/
 .cache/
 *.log
