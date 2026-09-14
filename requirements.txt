@@ -21,3 +21,7 @@ faiss-cpu>=1.8,<2.0
 rank-bm25>=0.2,<1.0
 
 # M5/M6 RAG, cache, and logging use the standard library plus dependencies above.
+
+# Agent module and thin API integration
+fastapi>=0.110,<1.0
+uvicorn>=0.29,<1.0
