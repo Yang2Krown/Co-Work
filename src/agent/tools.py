@@ -7,7 +7,7 @@ import math
 import re
 import threading
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
@@ -31,6 +31,7 @@ class ToolSpec:
     input_schema: Mapping[str, Any]
     parallel_safe: bool = True
     retryable: bool = True
+    may_call_llm: bool = False
 
 
 def _error_text(exc: BaseException) -> str:
@@ -104,6 +105,7 @@ class ToolRegistry:
                     "description": spec.description,
                     "input_schema": to_jsonable(spec.input_schema),
                     "parallel_safe": spec.parallel_safe,
+                    "may_call_llm": spec.may_call_llm,
                 }
                 for spec in sorted(self._specs.values(), key=lambda item: item.name)
             ]
@@ -219,6 +221,40 @@ class ToolRegistry:
                 for call in calls
             ]
             return [future.result() for future in futures]
+
+    def execute_many_stream(
+        self,
+        calls: Sequence[ToolCall],
+        timeout_seconds: float = 15.0,
+        retries: int = 0,
+        max_workers: Optional[int] = None,
+    ) -> Iterable[ToolResult]:
+        """Yield observations as soon as each call finishes.
+
+        ``execute_many`` remains order-preserving for existing callers; the
+        Agent streaming path uses this method so the UI does not wait for the
+        slowest parallel tool before it learns that another one completed.
+        """
+
+        if len(calls) <= 1:
+            if calls:
+                yield self.execute(calls[0], timeout_seconds, retries)
+            return
+        specs = [self.get(call.name) for call in calls]
+        can_parallel = all(spec is not None and spec.parallel_safe for spec in specs)
+        if not can_parallel:
+            for call in calls:
+                yield self.execute(call, timeout_seconds, retries)
+            return
+        worker_count = max_workers or self.max_workers
+        worker_count = max(1, min(worker_count, len(calls)))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [
+                executor.submit(self.execute, call, timeout_seconds, retries)
+                for call in calls
+            ]
+            for future in as_completed(futures):
+                yield future.result()
 
 
 class PaperRecord(BaseModel):
@@ -616,6 +652,7 @@ def build_default_tool_registry(
             description="Search the configured knowledge base and return grounded answer, chunks, and real citations.",
             handler=knowledge_retrieval,
             input_schema={"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}}},
+            may_call_llm=True,
         )
     )
     registry.register(
@@ -648,6 +685,7 @@ def build_default_tool_registry(
             description="Return a structured extractive paper summary or an injected summary result.",
             handler=paper_summary,
             input_schema={"type": "object", "properties": {"paper_id": {"type": "string"}, "text": {"type": "string"}}},
+            may_call_llm=summary_fn is not None,
         )
     )
     registry.register(

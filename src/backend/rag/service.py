@@ -70,6 +70,22 @@ class RAGService:
         # cosine score. BM25, RRF and reranker scores have different scales.
         return None if result.vector_score is None else float(result.vector_score)
 
+    @staticmethod
+    def _safe_stream_error(exc: BaseException) -> str:
+        """Keep provider secrets and response bodies out of persisted SSE events."""
+
+        if isinstance(exc, LLMServiceError):
+            # Composition wraps known provider failures into a user-safe message.
+            return str(exc)[:500]
+        detail = str(exc).lower()
+        if any(marker in detail for marker in ("401", "403", "api key", "authorization", "authentication")):
+            return type(exc).__name__ + ": provider authentication failed"
+        if any(marker in detail for marker in ("429", "rate limit")):
+            return type(exc).__name__ + ": provider rate limited"
+        if "timeout" in detail or "timed out" in detail:
+            return type(exc).__name__ + ": provider request timed out"
+        return type(exc).__name__ + ": provider request failed"
+
     def _is_low_relevance(self, results: List[RetrievalResult]) -> bool:
         if not results or self.low_relevance_threshold == 0:
             return False
@@ -223,7 +239,7 @@ class RAGService:
             if not generated.text.strip():
                 raise LLMServiceError("LLM returned an empty answer")
         except Exception as exc:  # noqa: BLE001 - provider failures become structured responses.
-            error = f"{type(exc).__name__}: {exc}"
+            error = self._safe_stream_error(exc)
             answer = "生成服务暂时不可用，请稍后重试。"
             response = RAGResponse(
                 answer=answer,
@@ -299,7 +315,7 @@ class RAGService:
                     answer_parts.append(fragment)
                     yield fragment
             except Exception as exc:  # noqa: BLE001 - provider failures are surfaced to callers.
-                error = f"{type(exc).__name__}: {exc}"
+                error = self._safe_stream_error(exc)
                 answer = "生成服务暂时不可用，请稍后重试。"
                 answer_parts.append(answer)
                 yield answer
@@ -329,17 +345,58 @@ class RAGService:
 
         started = perf_counter()
         request_id = request_id or str(uuid4())
+        sequence = 0
+
+        def emit(event: str, **payload: Any) -> RAGStreamEvent:
+            nonlocal sequence
+            sequence += 1
+            phase = "retrieval" if event.startswith("retrieval") or event == "metadata" else "generation"
+            return RAGStreamEvent(
+                event=event,
+                request_id=request_id,
+                sequence=sequence,
+                phase=phase,
+                **payload,
+            )
+
         effective_top_k = self.default_top_k if top_k is None else top_k
         if effective_top_k <= 0:
             raise ValueError("top_k must be greater than zero")
 
-        results, context, prompt, _ = self._prepare(question, top_k)
+        retrieval_started = perf_counter()
+        yield emit("retrieval_started", text="正在执行知识库混合检索")
+        try:
+            results, context, prompt, _ = self._prepare(question, top_k)
+        except Exception as exc:  # noqa: BLE001 - streaming callers must always receive a terminal event.
+            error = self._safe_stream_error(exc)
+            answer = "知识库检索暂时不可用，请检查索引和向量化配置后重试。"
+            self._log(
+                request_id,
+                question,
+                effective_top_k,
+                [],
+                answer,
+                started,
+                False,
+                error,
+            )
+            yield emit("error", text=answer, error=error)
+            yield emit("end", error=error)
+            return
         citations = build_citations(context.chunks)
-        yield RAGStreamEvent(
-            event="metadata",
-            request_id=request_id,
+        yield emit(
+            "metadata",
             citations=citations,
             retrieved_chunks=context.chunks,
+        )
+        yield emit(
+            "retrieval_finished",
+            text="检索完成",
+            metadata={
+                "retrieval_mode": self.retrieval_mode,
+                "chunk_count": len(context.chunks),
+                "latency_ms": (perf_counter() - retrieval_started) * 1000,
+            },
         )
 
         fallback_used = not results
@@ -348,25 +405,24 @@ class RAGService:
         if fallback_used and not self.allow_llm_fallback:
             answer = "当前知识库中未找到相关文档，无法基于知识库回答。"
             answer_parts.append(answer)
-            yield RAGStreamEvent(event="token", request_id=request_id, text=answer)
+            yield emit("token", text=answer)
         else:
+            llm_started = perf_counter()
+            yield emit("llm_started", text="正在调用生成模型")
             try:
                 for fragment in self.llm_client.stream(prompt, self.generation_config):
                     answer_parts.append(fragment)
-                    yield RAGStreamEvent(
-                        event="token",
-                        request_id=request_id,
-                        text=fragment,
-                    )
+                    yield emit("token", text=fragment)
             except Exception as exc:  # noqa: BLE001 - provider failures are surfaced as events.
-                error = f"{type(exc).__name__}: {exc}"
+                error = self._safe_stream_error(exc)
                 answer = "生成服务暂时不可用，请稍后重试。"
                 answer_parts.append(answer)
-                yield RAGStreamEvent(
-                    event="error",
-                    request_id=request_id,
-                    text=answer,
-                    error=error,
+                yield emit("error", text=answer, error=error)
+            finally:
+                yield emit(
+                    "llm_finished",
+                    text="生成模型调用结束",
+                    metadata={"latency_ms": (perf_counter() - llm_started) * 1000, "ok": error is None},
                 )
 
         self._log(
@@ -379,7 +435,7 @@ class RAGService:
             fallback_used,
             error,
         )
-        yield RAGStreamEvent(event="end", request_id=request_id, error=error)
+        yield emit("end", error=error)
 
 
 __all__ = ["RAGService", "RetrieverLike"]

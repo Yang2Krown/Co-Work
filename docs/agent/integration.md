@@ -116,10 +116,25 @@ data: {"event":"tool_finished","run_id":"...","session_id":"demo","payload":{"re
 
 ```
 
-客户端应处理 `run_started`、`thought`、`tool_started`、`tool_finished`、
-`final`、`error` 和 `run_finished`，并允许工具失败后继续收到最终结构化结果。
-正常顺序是 `run_started → thought → tool_started/tool_finished → final → run_finished`；
-失败或达到上限时，`final` 可能被 `error` 替代，但最后仍会有 `run_finished`。
+客户端应处理 `run_started`、`route_selected`、`llm_started`、`llm_finished`、
+`retrieval_started`、`retrieval_finished`、`tool_started`、`tool_finished`、
+`answer_token`、`final`、`error` 和 `run_finished`。每个事件均带有本轮内递增的
+`sequence`、UTC `timestamp`、`step`，以及在适用时的 `call_id`、耗时和 Token 用量。
+
+`route_selected` 会说明本轮是规则直达（`uses_llm=false`）还是进入 ReAct 规划；规则直达
+不会伪装成 LLM 调用。`llm_started/llm_finished` 仅表示一次可见的模型阶段：ReAct 的 JSON
+规划、RAG 答案生成，或工具内部的结构化摘要/问答；不会下发 Prompt 和隐藏推理。RAG 的
+正文仍由真实 `token` 事件增量输出，Agent 对应的事件名为 `answer_token`。并行工具的
+`tool_finished` 按实际完成时间下发，最终 trace 则仍按发起顺序保存，便于稳定复盘。
+
+正常 Agent 顺序通常是
+`run_started → route_selected →（llm_started/llm_finished）→ tool_started/tool_finished → final → run_finished`；
+RAG 则为
+`retrieval_started → metadata → retrieval_finished → llm_started → token* → llm_finished → end`。
+失败或达到上限时，`final` 可能被 `error` 替代，但最后仍会有 `run_finished`（RAG 为 `end`）。
+
+前端只应展示事件的安全摘要、白名单工具参数、耗时、Token、结构化结果和后端 Citation；
+不得展示 API Key、完整 Prompt、原始异常堆栈或模型隐藏推理。
 
 ## 安全与默认边界
 

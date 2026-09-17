@@ -7,6 +7,7 @@ crosses the boundary is a normalized citation reference.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -79,9 +80,15 @@ class AgentEvent(_SchemaModel):
 
     event: Literal[
         "run_started",
+        "route_selected",
+        "llm_started",
+        "llm_finished",
+        "retrieval_started",
+        "retrieval_finished",
         "thought",
         "tool_started",
         "tool_finished",
+        "answer_token",
         "final",
         "error",
         "run_finished",
@@ -90,6 +97,8 @@ class AgentEvent(_SchemaModel):
     session_id: str
     step_index: Optional[int] = None
     tool_name: Optional[str] = None
+    sequence: int = Field(default=0, ge=0)
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 

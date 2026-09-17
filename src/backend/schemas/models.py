@@ -1,5 +1,6 @@
 """Typed data structures for document, retrieval, and RAG boundaries."""
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -61,11 +62,26 @@ class RAGResponse(_SchemaModel):
 class RAGStreamEvent(_SchemaModel):
     """Structured, transport-neutral event emitted by RAG streaming."""
 
-    event: Literal["metadata", "token", "end", "error"]
+    event: Literal[
+        "retrieval_started",
+        "metadata",
+        "retrieval_finished",
+        "llm_started",
+        "token",
+        "llm_finished",
+        "end",
+        "error",
+    ]
     request_id: str
+    sequence: int = Field(default=0, ge=0)
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    step_index: int = Field(default=0, ge=0)
+    phase: str = "rag"
+    call_id: Optional[str] = None
     text: Optional[str] = None
     citations: List[Citation] = Field(default_factory=list)
     retrieved_chunks: List[RetrievalResult] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
 
 

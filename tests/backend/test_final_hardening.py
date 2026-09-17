@@ -72,12 +72,16 @@ def test_low_relevance_ignores_missing_scores() -> None:
 def test_structured_stream_starts_with_grounded_metadata_and_ends() -> None:
     events = list(_service(_result(vector_score=0.9)).stream_answer_events("question", request_id="req-1"))
 
-    assert [event.event for event in events] == ["metadata", "token", "end"]
-    assert events[0].request_id == "req-1"
-    assert events[0].citations[0].page_number == 5
-    assert events[0].citations[0].chunk_id == "chunk-1"
-    assert events[0].retrieved_chunks[0].chunk_id == "chunk-1"
-    assert events[1].text == "answer"
+    assert [event.event for event in events] == [
+        "retrieval_started", "metadata", "retrieval_finished", "llm_started",
+        "token", "llm_finished", "end",
+    ]
+    assert events[1].request_id == "req-1"
+    assert events[1].citations[0].page_number == 5
+    assert events[1].citations[0].chunk_id == "chunk-1"
+    assert events[1].retrieved_chunks[0].chunk_id == "chunk-1"
+    assert events[4].text == "answer"
+    assert [event.sequence for event in events] == list(range(1, len(events) + 1))
 
 
 def test_structured_stream_reports_provider_error() -> None:
@@ -85,7 +89,10 @@ def test_structured_stream_reports_provider_error() -> None:
 
     events = list(service.stream_answer_events("question", request_id="req-2"))
 
-    assert [event.event for event in events] == ["metadata", "error", "end"]
-    assert events[0].citations[0].page_number == 5
-    assert events[1].text == "生成服务暂时不可用，请稍后重试。"
-    assert events[1].error == "LLMServiceError: provider unavailable"
+    assert [event.event for event in events] == [
+        "retrieval_started", "metadata", "retrieval_finished", "llm_started",
+        "error", "llm_finished", "end",
+    ]
+    assert events[1].citations[0].page_number == 5
+    assert events[4].text == "生成服务暂时不可用，请稍后重试。"
+    assert events[4].error == "LLMServiceError: provider unavailable"
