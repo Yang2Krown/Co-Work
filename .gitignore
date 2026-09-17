@@ -15,9 +15,12 @@ data/processed/*
 data/indexes/*
 !data/indexes/.gitkeep
 
-data/samples/papers/*
-!data/samples/papers/.gitkeep
-
 logs/
 .cache/
 *.log
+
+# Local single-user frontend workspace (papers, SQLite, indexes)
+data/workspace/
+
+# Local design-reference repository; not required by the application.
+vendor/avoid-ai-design/

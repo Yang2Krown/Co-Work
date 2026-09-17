@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Co-Work · 界面原型</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="preview">
+    <span>CO-WORK <b>界面原型</b></span>
+    <div id="scenes"></div>
+    <span class="demo">演示数据 · 非实测</span>
+  </nav>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">Co-Work<small>研究工作台</small></div>
+      <button class="new primary" data-scene="empty">新建会话</button>
+      <div class="navigation">
+        <button data-scene="answer">工作台</button>
+        <button data-scene="documents">知识库 <small>5</small></button>
+      </div>
+      <div class="label">会话</div>
+      <button class="conversation active" data-scene="answer">Transformer 的效率改进<small>今天 · 知识库问答</small></button>
+      <button class="conversation" data-scene="agent">比较两种注意力机制<small>今天 · 智能助理</small></button>
+      <button class="conversation" data-scene="compare">DeepNorm 与 TNT<small>昨天 · 智能助理</small></button>
+      <div class="label paperlabel">文档</div>
+      <div class="paper">Efficient Transformers<small>PDF · 已就绪</small></div>
+      <div class="paper">Transformer in Transformer<small>PDF · 已就绪</small></div>
+      <div class="paper">DeepNet<small>PDF · 已就绪</small></div>
+      <button class="text" data-scene="documents">查看全部文档</button>
+      <div class="sidebottom">
+        <button data-scene="status">系统状态</button>
+        <small><i class="dot"></i>DeepSeek API · 本地知识库</small>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header>
+        <div><h1 id="title">研究工作台</h1><p id="subtitle">从一轮论文检索开始。</p></div>
+        <div class="headeractions"><span class="chip">DeepSeek</span><button id="toggle" aria-label="展开或关闭检查器">检查器</button></div>
+      </header>
+      <div id="content"></div>
+    </div>
+  </div>
+  <div id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

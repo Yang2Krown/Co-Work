@@ -152,6 +152,7 @@ class OpenAICompatibleClient:
         )
 
     def stream(self, prompt: RAGPrompt, config: GenerationConfig) -> Iterator[str]:
+        received_text = False
         try:
             with self._request(prompt, config, stream=True) as response:
                 for raw_line in response:
@@ -160,6 +161,8 @@ class OpenAICompatibleClient:
                         continue
                     data = line[5:].strip()
                     if data == "[DONE]":
+                        if not received_text:
+                            raise LLMServiceError("LLM returned an empty streamed answer")
                         return
                     try:
                         payload = json.loads(data)
@@ -168,7 +171,9 @@ class OpenAICompatibleClient:
                     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
                         raise LLMServiceError("LLM stream returned invalid JSON") from exc
                     if text:
+                        received_text = True
                         yield text
+            raise LLMServiceError("LLM stream ended before completion")
         except LLMServiceError:
             raise
         except (UnicodeDecodeError, OSError) as exc:
