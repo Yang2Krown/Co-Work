@@ -157,3 +157,33 @@ ReAct 协议、会话记忆、真实引用边界和集成方式见
 [Agent 架构说明](docs/agent/architecture.md) 与 [Agent 集成说明](docs/agent/integration.md)。
 论文基准库、近期论文演示库和本地索引步骤见
 [Agent 论文库说明](docs/agent/paper_corpora.md)；论文 PDF、索引和 API Key 均不提交到 Git。
+
+## Research workspace UI
+
+The local single-user Streamlit workspace uses **DeepSeek API for both Agent
+and direct RAG**, sharing one client. Install `requirements.txt`, configure
+`DEEPSEEK_API_KEY` in your shell, then run:
+
+```bash
+.venv/bin/streamlit run app.py
+```
+
+Model settings come from `config/agent.yaml`. On first entry the UI requires a
+DeepSeek API Key and performs a real connection check before opening the
+workspace. The key stays in the current Streamlit process and is never written
+to SQLite or project files; it must be entered again after restarting the app.
+The default workspace `data/workspace/` contains private files, SQLite history
+and indexes and is Git-ignored. Set `COWORK_DATA_DIR` to use another local
+workspace. The server binds to `127.0.0.1` by default. First document ingestion
+requires the local embedding/vector-store dependencies and may download models.
+
+- [Development plan](docs/frontend/development-plan.md)
+- [Application contracts](docs/frontend/integration-contract.md)
+- [Design specification](docs/frontend/design-spec.md)
+- [Six-screen interactive prototype](docs/frontend/prototype/index.html)
+- [Validation record](docs/frontend/validation.md)
+
+The sidebar has two primary destinations: **聊天** and **知识库**. Chat
+preserves conversation context and can call the local retrieval, paper summary,
+comparison, keyword, calculator, and time tools. Web search remains disabled
+until an adapter is injected.

@@ -355,7 +355,7 @@ def build_agent_service(
         summary_fn=effective_paper_summary,
         max_workers=agent_config.max_workers,
     )
-    return AgentService(
+    service = AgentService(
         llm_client=llm_client,
         registry=registry,
         memory_store=memory_store,
@@ -364,6 +364,9 @@ def build_agent_service(
         summary_callback=effective_summary,
         health_check=health_check or _default_health_check(llm_client, rag_service),
     )
+    # Public composition handle for applications that also expose direct RAG.
+    service.rag_service = rag_service
+    return service
 
 
 def create_deepseek_client(
@@ -424,6 +427,7 @@ def build_deepseek_rag_agent_service(
     api_base: Optional[str] = None,
     api_key_env: Optional[str] = None,
     timeout_seconds: Optional[float] = None,
+    client_wrapper: Optional[Callable[[Any], Any]] = None,
     **agent_kwargs: Any,
 ) -> AgentService:
     """Build RAG and Agent around one DeepSeek client and a hybrid retriever."""
@@ -439,6 +443,8 @@ def build_deepseek_rag_agent_service(
         timeout_seconds=timeout_seconds,
         config=config,
     )
+    if client_wrapper is not None:
+        llm_client = client_wrapper(llm_client)
     rag_service = RAGService(
         retriever=retriever,
         llm_client=llm_client,

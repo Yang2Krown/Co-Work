@@ -25,3 +25,6 @@ rank-bm25>=0.2,<1.0
 # Agent module and thin API integration
 fastapi>=0.110,<1.0
 uvicorn>=0.29,<1.0
+
+# Local research workspace UI
+streamlit>=1.42,<2.0
