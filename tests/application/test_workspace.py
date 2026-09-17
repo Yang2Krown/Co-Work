@@ -72,7 +72,10 @@ def test_import_query_delete_updates_all_indexes(factory):
     run = app.start_turn(conversation['conversation_id'], 'attention')
     wait(app)
     events = app.read_events(run)
-    assert [e['event'] for e in events['events']] == ['metadata', 'token', 'token', 'end']
+    assert [e['event'] for e in events['events']] == [
+        'retrieval_started', 'metadata', 'retrieval_finished', 'llm_started',
+        'token', 'token', 'llm_finished', 'end',
+    ]
     assert app.read_events(run, events['cursor'])['events'] == []
     answer = app.get_conversation(conversation['conversation_id'])['messages'][-1]
     assert answer['content'] == '论文回答 [1]'

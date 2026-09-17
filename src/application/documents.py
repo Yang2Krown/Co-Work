@@ -74,8 +74,8 @@ class Documents:
                 self.db.put('document', identifier, record)
                 refresh()
                 item['status'] = 'ready'
-            except Exception:
-                record.update(status='failed', error='解析或索引失败，请检查文件内容及本地模型依赖后重试。')
+            except Exception as exc:
+                record.update(status='failed', error=self.resources.user_error(exc))
                 item.update(status='failed', error=record['error'])
                 self.db.put('document', identifier, record)
                 # A failed upsert may have written vectors. Remove before exposing any new snapshot.

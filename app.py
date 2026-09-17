@@ -23,7 +23,7 @@ def connection_gate():
         <div class="cw-setup-notes">
           <div><span>01</span><strong>本地知识库</strong><small>文件与索引保存在当前工作区。</small></div>
           <div><span>02</span><strong>连接验证</strong><small>通过一次 API 请求确认 Key 可用。</small></div>
-          <div><span>03</span><strong>仅本次运行</strong><small>Key 不写入 SQLite 或项目文件。</small></div>
+          <div><span>03</span><strong>本地密钥</strong><small>Key 仅从 .env 或本次输入读取，不写入 SQLite 或 Git。</small></div>
         </div>
         ''')
     with form:

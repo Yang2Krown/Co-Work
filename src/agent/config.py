@@ -19,7 +19,7 @@ class AgentLLMConfig:
     """OpenAI-compatible model settings for the Agent layer."""
 
     provider: str = "openai_compatible"
-    model_name: str = "deepseek-v4-flash"
+    model_name: str = "deepseek-flash"
     api_base: str = "https://api.deepseek.com"
     api_key_env: str = "DEEPSEEK_API_KEY"
     timeout_seconds: float = 60.0

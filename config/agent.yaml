@@ -1,7 +1,7 @@
 # Agent orchestration limits. No model credentials belong in this file.
 llm:
   provider: openai_compatible
-  model_name: deepseek-v4-flash
+  model_name: deepseek-flash
   api_base: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
   timeout_seconds: 60
@@ -9,7 +9,9 @@ agent:
   max_iterations: 6
   max_repeated_actions: 2
   max_tool_calls_per_step: 4
-  tool_timeout_seconds: 15
+  # RAG tools include DashScope query embedding, hybrid retrieval, local
+  # reranking, and a DeepSeek generation call (up to 60 seconds).
+  tool_timeout_seconds: 90
   tool_retry_count: 1
   repair_attempts: 1
   max_workers: 4

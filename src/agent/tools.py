@@ -7,7 +7,7 @@ import math
 import re
 import threading
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
@@ -31,6 +31,7 @@ class ToolSpec:
     input_schema: Mapping[str, Any]
     parallel_safe: bool = True
     retryable: bool = True
+    may_call_llm: bool = False
 
 
 def _error_text(exc: BaseException) -> str:
@@ -104,6 +105,7 @@ class ToolRegistry:
                     "description": spec.description,
                     "input_schema": to_jsonable(spec.input_schema),
                     "parallel_safe": spec.parallel_safe,
+                    "may_call_llm": spec.may_call_llm,
                 }
                 for spec in sorted(self._specs.values(), key=lambda item: item.name)
             ]
@@ -220,6 +222,40 @@ class ToolRegistry:
             ]
             return [future.result() for future in futures]
 
+    def execute_many_stream(
+        self,
+        calls: Sequence[ToolCall],
+        timeout_seconds: float = 15.0,
+        retries: int = 0,
+        max_workers: Optional[int] = None,
+    ) -> Iterable[ToolResult]:
+        """Yield observations as soon as each call finishes.
+
+        ``execute_many`` remains order-preserving for existing callers; the
+        Agent streaming path uses this method so the UI does not wait for the
+        slowest parallel tool before it learns that another one completed.
+        """
+
+        if len(calls) <= 1:
+            if calls:
+                yield self.execute(calls[0], timeout_seconds, retries)
+            return
+        specs = [self.get(call.name) for call in calls]
+        can_parallel = all(spec is not None and spec.parallel_safe for spec in specs)
+        if not can_parallel:
+            for call in calls:
+                yield self.execute(call, timeout_seconds, retries)
+            return
+        worker_count = max_workers or self.max_workers
+        worker_count = max(1, min(worker_count, len(calls)))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [
+                executor.submit(self.execute, call, timeout_seconds, retries)
+                for call in calls
+            ]
+            for future in as_completed(futures):
+                yield future.result()
+
 
 class PaperRecord(BaseModel):
     """A minimal paper record used by deterministic paper tools."""
@@ -252,7 +288,21 @@ class InMemoryPaperCatalog:
         self._papers[paper.paper_id] = paper
 
     def get(self, paper_id: str) -> Optional[PaperRecord]:
-        return self._papers.get(paper_id)
+        """Resolve an internal document ID or an unambiguous uploaded filename.
+
+        The catalog continues to retain the backend document ID as the paper
+        identity.  A filename is merely a user-facing alias: it is accepted
+        only when exactly one indexed document has that exact filename.  This
+        lets an Agent refer to a paper the user named without guessing IDs or
+        extracting metadata from the filename.
+        """
+
+        lookup = paper_id.strip()
+        direct = self._papers.get(lookup)
+        if direct is not None:
+            return direct
+        matches = [paper for paper in self._papers.values() if paper.file_name == lookup]
+        return matches[0] if len(matches) == 1 else None
 
     def ids(self) -> List[str]:
         return sorted(self._papers)
@@ -616,12 +666,13 @@ def build_default_tool_registry(
             description="Search the configured knowledge base and return grounded answer, chunks, and real citations.",
             handler=knowledge_retrieval,
             input_schema={"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}}},
+            may_call_llm=True,
         )
     )
     registry.register(
         ToolSpec(
             name="paper_metadata",
-            description="Read metadata for a paper from the injected paper catalog.",
+            description="Read metadata for one indexed paper. paper_id must be an exact backend document ID or an exact unique uploaded filename stated by the user.",
             handler=paper_metadata,
             input_schema={"type": "object", "required": ["paper_id"], "properties": {"paper_id": {"type": "string"}}},
         )
@@ -629,7 +680,7 @@ def build_default_tool_registry(
     registry.register(
         ToolSpec(
             name="paper_compare",
-            description="Compare two papers from the injected paper catalog.",
+            description="Compare two indexed papers. Each ID must be an exact backend document ID or an exact unique uploaded filename stated by the user.",
             handler=paper_compare,
             input_schema={"type": "object", "required": ["paper_a", "paper_b"], "properties": {"paper_a": {"type": "string"}, "paper_b": {"type": "string"}}},
         )
@@ -645,9 +696,10 @@ def build_default_tool_registry(
     registry.register(
         ToolSpec(
             name="paper_summary",
-            description="Return a structured extractive paper summary or an injected summary result.",
+            description="Return a structured summary for one indexed paper. paper_id must be an exact backend document ID or an exact unique uploaded filename stated by the user; text may be supplied instead.",
             handler=paper_summary,
             input_schema={"type": "object", "properties": {"paper_id": {"type": "string"}, "text": {"type": "string"}}},
+            may_call_llm=summary_fn is not None,
         )
     )
     registry.register(

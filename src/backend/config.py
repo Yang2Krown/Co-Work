@@ -26,10 +26,14 @@ class ChunkingConfig(_ConfigModel):
 
 
 class EmbeddingConfig(_ConfigModel):
-    provider: str = "local"
-    model_name: str = "bge-large-zh"
-    batch_size: int = Field(default=32, gt=0)
+    provider: Literal["local", "dashscope"] = "dashscope"
+    model_name: str = "text-embedding-v4"
+    batch_size: int = Field(default=20, gt=0)
     normalize_embeddings: bool = True
+    api_base: Optional[str] = None
+    api_base_env: str = "DASHSCOPE_API_BASE"
+    api_key_env: str = "DASHSCOPE_API_KEY"
+    timeout_seconds: float = Field(default=60.0, gt=0)
 
 
 class VectorStoreConfig(_ConfigModel):
@@ -47,9 +51,14 @@ class RetrievalConfig(_ConfigModel):
     enable_rrf: bool = True
     rrf_k: int = Field(default=60, gt=0)
     enable_reranker: bool = True
+    reranker_provider: Literal["local", "dashscope"] = "local"
     reranker_model_name: str = "bge-reranker-base"
     reranker_top_n: int = Field(default=20, gt=0)
     reranker_batch_size: int = Field(default=16, gt=0)
+    reranker_api_base: Optional[str] = None
+    reranker_api_base_env: str = "DASHSCOPE_API_BASE"
+    reranker_api_key_env: str = "DASHSCOPE_API_KEY"
+    reranker_timeout_seconds: float = Field(default=30.0, gt=0)
 
 
 class RagConfig(_ConfigModel):
@@ -59,7 +68,8 @@ class RagConfig(_ConfigModel):
     api_key_env: str = "OPENAI_API_KEY"
     timeout_seconds: float = Field(default=60.0, gt=0)
     max_context_chars: int = Field(default=6000, gt=0)
-    max_output_tokens: int = Field(default=512, gt=0)
+    # None omits max_tokens and delegates the output limit to the provider.
+    max_output_tokens: Optional[int] = Field(default=None, gt=0)
     temperature: float = Field(default=0.2, ge=0)
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: Optional[int] = Field(default=None, gt=0)

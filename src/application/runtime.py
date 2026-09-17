@@ -7,7 +7,8 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 from src.agent.schemas import AgentRequest
-from .bootstrap import BackendResources, EmptyRetriever, compose, friendly_error, local_dependency_error
+from src.backend.env import load_dotenv
+from .bootstrap import BackendResources, EmptyRetriever, compose, friendly_error
 from .contracts import ImportJob, MessageRecord, RunRecord
 from .conversations import Conversations, now
 from .documents import Documents
@@ -15,6 +16,7 @@ from .persistence import Database, SQLiteSessionStore
 
 class Application:
     def __init__(self, root, resources=None, composer=compose):
+        load_dotenv()
         self.root = Path(root)
         self.db = Database(self.root / 'workspace.sqlite3')
         self.memory = SQLiteSessionStore(self.db)
@@ -80,8 +82,8 @@ class Application:
                     try:
                         self._ensure()
                         self.documents.import_job(job, self._refresh)
-                    except Exception:
-                        job.status, job.error = 'failed', '导入未完成，请修复知识库后重试。'
+                    except Exception as exc:
+                        job.status, job.error = 'failed', self.resources.user_error(exc)
                         for item in job.items:
                             if item['status'] == 'pending':
                                 item.update(status='failed', error=job.error)
@@ -141,8 +143,8 @@ class Application:
                     self.db.put('meta', 'kb', {'dirty': True})
                     self.documents.recover(self._refresh, force=True)
                     job.status, job.completed, job.stage = 'completed', 1, '修复完成'
-                except Exception:
-                    job.status, job.error = 'failed', '恢复失败，请检查本地模型和文件。'
+                except Exception as exc:
+                    job.status, job.error = 'failed', self.resources.user_error(exc)
                     self.db.put('meta', 'kb', {'dirty': True})
                 self.db.put('job', job.job_id, job)
             self._submit(work)
@@ -245,8 +247,12 @@ class Application:
         return {'events': run['events'][cursor:], 'cursor': len(run['events']), 'status': run['status'], 'error': run['error']}
 
     def get_status(self):
+        load_dotenv()
+        embedding = self.resources.config.embedding
         return {'provider': 'DeepSeek API', 'model': self.agent.llm_client.model_name,
             'llm': '已配置，未验证连接' if os.getenv('DEEPSEEK_API_KEY') else '未配置 DEEPSEEK_API_KEY',
+            'embedding': {'provider': embedding.provider, 'model': embedding.model_name,
+                          'status': '已配置，未验证连接' if os.getenv(embedding.api_key_env) else '未配置 ' + embedding.api_key_env},
             'knowledge_base': self.db.get('meta', 'kb') or {'dirty': False, 'version': 'empty'},
             'runtime_loaded': self.loaded, 'busy': self.busy, 'operation': self.operation,
             'web_search': '未启用', 'metrics': self.agent.metrics.snapshot(),
@@ -264,7 +270,7 @@ class Application:
             from src.backend.rag import GenerationConfig
             self.agent.llm_client.generate(
                 RAGPrompt(system='Reply with OK only.', user='Connection check'),
-                GenerationConfig(temperature=0, max_output_tokens=128),
+                GenerationConfig(temperature=0),
             )
         except Exception as exc:
             if previous is None:
@@ -287,7 +293,7 @@ class Application:
                 from src.backend.rag import GenerationConfig
                 result = {'checked_at': now()}
                 try:
-                    self.agent.llm_client.generate(RAGPrompt(system='Reply OK.', user='Connectivity check'), GenerationConfig(max_output_tokens=128))
+                    self.agent.llm_client.generate(RAGPrompt(system='Reply OK.', user='Connectivity check'), GenerationConfig())
                     result['llm'] = {'ok': True, 'message': 'DeepSeek API 连接成功'}
                 except Exception as exc:
                     result['llm'] = {'ok': False, 'message': friendly_error(exc)}
@@ -295,11 +301,11 @@ class Application:
                     self._ensure()
                     if self.documents.ready():
                         self.rag.retriever.retrieve('connection check', top_k=1)
-                        result['retrieval'] = {'ok': True, 'message': '本地检索检查通过'}
+                        result['retrieval'] = {'ok': True, 'message': '混合检索检查通过'}
                     else:
-                        result['retrieval'] = {'ok': None, 'message': '知识库为空，未验证本地检索'}
+                        result['retrieval'] = {'ok': None, 'message': '知识库为空，未验证混合检索'}
                 except Exception as exc:
-                    result['retrieval'] = {'ok': False, 'message': local_dependency_error(exc)}
+                    result['retrieval'] = {'ok': False, 'message': self.resources.user_error(exc)}
                 self.db.put('meta', 'probe', result)
             self._submit(work)
 

@@ -81,6 +81,31 @@ class BackendResources:
         self.embedding = None
         self.store = None
         self.reranker = None
+        self.index_root = None
+        self.manifest_path = None
+
+    def _embedding_namespace(self):
+        import hashlib
+        c = self.config
+        fingerprint = '|'.join((
+            c.embedding.provider,
+            c.embedding.model_name,
+            str(c.embedding.normalize_embeddings),
+            c.chunking.strategy,
+            str(c.chunking.chunk_size),
+            str(c.chunking.chunk_overlap),
+        ))
+        return hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()[:16]
+
+    def user_error(self, error):
+        text = str(error).lower()
+        if 'dashscope' in text or 'embedding endpoint' in text:
+            if 'api key' in text or '401' in text or '403' in text:
+                return '百炼向量化鉴权失败，请检查 .env 中的 DASHSCOPE_API_KEY。'
+            if 'endpoint' in text or 'url' in text:
+                return '百炼向量化地址无效，请检查 .env 中的 DASHSCOPE_API_BASE。'
+            return '百炼向量化失败，请检查网络、模型权限和 .env 配置后重试。'
+        return local_dependency_error(error)
 
     def ensure(self):
         if self.store is not None:
@@ -89,9 +114,37 @@ class BackendResources:
         from src.backend.vectorstores import create_vector_store
         from src.backend.retrieval.reranker import Reranker
         c = self.config
-        self.embedding = EmbeddingService(c.embedding.model_name, batch_size=c.embedding.batch_size, normalize_embeddings=c.embedding.normalize_embeddings)
-        self.store = create_vector_store(c.vector_store.type, str(self.root / 'indexes'), 'cowork_workspace', c.vector_store.faiss_num_threads)
-        self.reranker = Reranker(c.retrieval.reranker_model_name, batch_size=c.retrieval.reranker_batch_size)
+        namespace = self._embedding_namespace()
+        self.index_root = self.root / 'indexes' / namespace
+        self.manifest_path = self.root / ('manifest-' + namespace + '.json')
+        self.embedding = EmbeddingService(
+            c.embedding.model_name,
+            batch_size=c.embedding.batch_size,
+            normalize_embeddings=c.embedding.normalize_embeddings,
+            provider=c.embedding.provider,
+            api_base=c.embedding.api_base,
+            api_base_env=c.embedding.api_base_env,
+            api_key_env=c.embedding.api_key_env,
+            timeout_seconds=c.embedding.timeout_seconds,
+        )
+        self.store = create_vector_store(
+            c.vector_store.type,
+            str(self.index_root),
+            'cowork_workspace_' + namespace,
+            c.vector_store.faiss_num_threads,
+        )
+        self.reranker = (
+            Reranker(
+                c.retrieval.reranker_model_name,
+                batch_size=c.retrieval.reranker_batch_size,
+                provider=c.retrieval.reranker_provider,
+                api_base=c.retrieval.reranker_api_base,
+                api_base_env=c.retrieval.reranker_api_base_env,
+                api_key_env=c.retrieval.reranker_api_key_env,
+                timeout_seconds=c.retrieval.reranker_timeout_seconds,
+            )
+            if c.retrieval.enable_reranker else None
+        )
 
     def assemble(self, documents):
         if not documents:
@@ -105,22 +158,25 @@ class BackendResources:
         chunks = [chunk for doc in documents for chunk in chunk_document(doc, strategy=c.chunking.strategy, chunk_size=c.chunking.chunk_size, chunk_overlap=c.chunking.chunk_overlap)]
         # Upsert persisted vectors lazily; embeddings are only generated for new/missing documents.
         from src.backend.indexing import IncrementalIndex
-        index = IncrementalIndex(self.store, self.embedding, str(self.root / 'manifest.json'), c.chunking.strategy, c.chunking.chunk_size, c.chunking.chunk_overlap)
+        index = IncrementalIndex(self.store, self.embedding, str(self.manifest_path), c.chunking.strategy, c.chunking.chunk_size, c.chunking.chunk_overlap)
         index.index_documents(documents)
         return HybridRetriever(VectorRetriever(self.store, self.embedding), BM25Retriever(chunks), self.reranker,
             vector_top_k=c.retrieval.vector_top_k, bm25_top_k=c.retrieval.bm25_top_k,
-            final_top_k=c.retrieval.final_top_k, rrf_k=c.retrieval.rrf_k, reranker_top_n=c.retrieval.reranker_top_n)
+            final_top_k=c.retrieval.final_top_k, enable_bm25=c.retrieval.enable_bm25,
+            enable_rrf=c.retrieval.enable_rrf, rrf_k=c.retrieval.rrf_k,
+            enable_reranker=c.retrieval.enable_reranker, reranker_top_n=c.retrieval.reranker_top_n)
 
     def reset_manifest(self):
         self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / 'manifest.json').write_text('{}', encoding='utf-8')
+        path = self.manifest_path or (self.root / 'manifest.json')
+        path.write_text('{}', encoding='utf-8')
 
     def remove(self, document):
         import json
         self.ensure()
         self.store.delete_document(document.document_id)
         self.store.persist()
-        path = self.root / 'manifest.json'
+        path = self.manifest_path or (self.root / 'manifest.json')
         manifest = json.loads(path.read_text()) if path.exists() else {}
         manifest = {k: v for k, v in manifest.items() if v != document.document_id}
         temporary = path.with_suffix('.tmp')

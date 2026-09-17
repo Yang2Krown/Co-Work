@@ -7,10 +7,18 @@ chunking:
   chunk_overlap: 64
 
 embedding:
-  provider: local
-  model_name: bge-large-zh
-  batch_size: 32
+  # DashScope OpenAI-compatible text embedding endpoint. Keep the workspace
+  # host and API key in environment variables; never commit them here.
+  provider: dashscope
+  # Verified against the configured DashScope account. The previous
+  # text-embedding-v4 free-tier quota is exhausted for this account.
+  model_name: qwen3.7-text-embedding
+  batch_size: 20
   normalize_embeddings: true
+  api_base: null
+  api_base_env: DASHSCOPE_API_BASE
+  api_key_env: DASHSCOPE_API_KEY
+  timeout_seconds: 60
 
 vector_store:
   type: chroma
@@ -26,18 +34,27 @@ retrieval:
   enable_rrf: true
   rrf_k: 60
   enable_reranker: true
-  reranker_model_name: bge-reranker-base
+  # Online reranking avoids a one-time 1GB+ local CrossEncoder download.
+  reranker_provider: dashscope
+  reranker_model_name: qwen3.7-text-rerank
   reranker_top_n: 20
   reranker_batch_size: 16
+  reranker_api_base: null
+  reranker_api_base_env: DASHSCOPE_API_BASE
+  reranker_api_key_env: DASHSCOPE_API_KEY
+  reranker_timeout_seconds: 30
 
 rag:
   provider: openai_compatible
-  model_name: gpt-4o-mini
-  api_base: https://api.openai.com/v1
-  api_key_env: OPENAI_API_KEY
+  model_name: deepseek-flash
+  api_base: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
   timeout_seconds: 60
   max_context_chars: 6000
-  max_output_tokens: 512
+  # Omit max_tokens in normal requests and use the provider's model default.
+  # If a reasoning-only completion reaches that limit, the client retries with
+  # 4096, then 6144, then 8192 tokens; other provider failures are not retried.
+  max_output_tokens: null
   temperature: 0.2
   top_p: 0.9
   top_k: null

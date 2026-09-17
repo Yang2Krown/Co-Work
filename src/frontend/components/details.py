@@ -5,6 +5,43 @@ TOOL_NAMES = {'knowledge_retrieval': '知识库检索', 'paper_metadata': '论�
               'paper_summary': '论文摘要', 'keyword_extract': '关键词提取', 'calculator': '计算器',
               'current_time': '当前时间', 'web_search': '联网搜索'}
 
+
+def _event_label(event):
+    name = event.get('event')
+    payload = event.get('payload') or event.get('metadata') or {}
+    if name == 'route_selected':
+        return ('✓ ', '规则路由：直接调用 ' + TOOL_NAMES.get(payload.get('tool_name'), payload.get('tool_name') or '工具')) if not payload.get('uses_llm') else ('○ ', '进入 LLM ReAct 规划')
+    if name == 'llm_started': return '○ ', 'LLM 调用中 · ' + str(payload.get('phase') or '生成')
+    if name == 'llm_finished': return ('✓ ' if payload.get('ok', True) else '! ', 'LLM 调用完成 · ' + str(payload.get('phase') or '生成'))
+    if name == 'retrieval_started': return '○ ', '正在执行混合检索（向量 + BM25）'
+    if name == 'retrieval_finished': return '✓ ', '混合检索完成 · {} 个片段'.format(payload.get('chunk_count', '?'))
+    if name == 'metadata': return '✓ ', '已获取引用与检索片段'
+    if name in ('answer_token', 'token'): return '… ', '正在流式生成回答'
+    if name == 'tool_started': return '○ ', '工具运行中：' + TOOL_NAMES.get(event.get('tool_name'), event.get('tool_name', '工具'))
+    if name == 'tool_finished':
+        result = payload.get('result', {})
+        return ('✓ ' if result.get('ok') else '! ', ('工具完成：' if result.get('ok') else '工具失败：') + TOOL_NAMES.get(event.get('tool_name'), event.get('tool_name', '工具')))
+    if name == 'final': return '✓ ', '已生成最终回答'
+    if name == 'error': return '! ', '执行异常：' + str(payload.get('error') or event.get('error') or '未知错误')
+    if name in ('end', 'run_finished'): return '✓ ', '本轮执行结束'
+    return None
+
+
+def live_timeline(events, compact=False):
+    visible = []
+    for event in events:
+        label = _event_label(event)
+        if label and (event.get('event') not in ('token', 'answer_token') or not visible or visible[-1][1] != label[1]):
+            visible.append(label)
+    if compact:
+        visible = visible[-6:]
+    if not visible:
+        return
+    with st.container(border=True):
+        st.caption('实时执行流')
+        for marker, text in visible:
+            st.write(marker + text)
+
 def sources(app, message):
     citations = message.get('citations') or []
     if not citations:
@@ -28,11 +65,12 @@ def sources(app, message):
         st.divider()
 
 def trace(message, events):
+    live_timeline(events)
     steps = message.get('trace') or []
     if steps:
         for step in steps:
             with st.expander(f"步骤 {step['step_index'] + 1} · {step['status']}"):
-                st.caption('Thought')
+                st.caption('行动摘要')
                 st.write(step.get('thought') or '未提供')
                 st.caption('Action')
                 st.json(step.get('calls', []), expanded=False)
@@ -62,6 +100,25 @@ def trace(message, events):
                 st.write(marker + TOOL_NAMES.get(event.get('tool_name'), event.get('tool_name', '工具')))
                 with st.expander('Action / Observation', expanded=False):
                     st.json(payload, expanded=False)
+            elif name in ('route_selected', 'llm_started', 'llm_finished', 'retrieval_started',
+                          'retrieval_finished', 'metadata', 'error', 'end', 'run_finished'):
+                label = _event_label(event)
+                if not label:
+                    continue
+                with st.expander(label[1], expanded=False):
+                    details = {
+                        'sequence': event.get('sequence'),
+                        'timestamp': event.get('timestamp'),
+                        'step_index': event.get('step_index'),
+                        'tool_name': event.get('tool_name'),
+                        'phase': event.get('phase'),
+                        'payload': payload or event.get('metadata') or {},
+                        'citations': event.get('citations') or [],
+                        'retrieved_chunks': event.get('retrieved_chunks') or [],
+                    }
+                    if event.get('error'):
+                        details['error'] = event['error']
+                    st.json(details, expanded=False)
         if not events:
             st.caption('执行后可在这里查看工具轨迹。')
 

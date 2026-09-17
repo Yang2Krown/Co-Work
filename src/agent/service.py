@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 from collections import Counter
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
@@ -31,6 +32,9 @@ from .schemas import (
     to_jsonable,
 )
 from .tools import ToolRegistry, build_default_tool_registry
+
+
+_EVENT_SEQUENCE: ContextVar[int] = ContextVar("agent_event_sequence", default=0)
 
 
 def _safe_error(exc: BaseException) -> str:
@@ -156,8 +160,8 @@ class AgentService:
             return AgentRequest.model_validate(value)
         raise TypeError("request must be an AgentRequest or mapping")
 
-    @staticmethod
     def _event(
+        self,
         event: str,
         run_id: str,
         session_id: str,
@@ -165,12 +169,15 @@ class AgentService:
         tool_name: Optional[str] = None,
         payload: Optional[Dict[str, Any]] = None,
     ) -> AgentEvent:
+        sequence = _EVENT_SEQUENCE.get() + 1
+        _EVENT_SEQUENCE.set(sequence)
         return AgentEvent(
             event=event,
             run_id=run_id,
             session_id=session_id,
             step_index=step_index,
             tool_name=tool_name,
+            sequence=sequence,
             payload=to_jsonable(payload or {}),
         )
 
@@ -290,6 +297,16 @@ class AgentService:
             tool_name=call.name,
             payload={"call_id": call.call_id, "arguments": call.arguments},
         )
+        spec = self.registry.get(call.name)
+        if spec is not None and spec.may_call_llm:
+            yield self._event(
+                "llm_started",
+                run_id,
+                request.session_id,
+                step_index=0,
+                tool_name=call.name,
+                payload={"phase": "tool_internal", "call_id": call.call_id},
+            )
         result = self.registry.execute(
             call,
             timeout_seconds=self.config.tool_timeout_seconds,
@@ -300,6 +317,15 @@ class AgentService:
         tool_usage = self._tool_token_usage(result)
         normalized_tool_usage = _merge_token_usage(None, tool_usage)
         run_token_usage = _merge_token_usage(state.get("token_usage"), tool_usage)
+        if spec is not None and spec.may_call_llm:
+            yield self._event(
+                "llm_finished",
+                run_id,
+                request.session_id,
+                step_index=0,
+                tool_name=call.name,
+                payload={"phase": "tool_internal", "call_id": call.call_id, "ok": result.ok, "token_usage": tool_usage},
+            )
         yield self._event(
             "tool_finished",
             run_id,
@@ -390,6 +416,14 @@ class AgentService:
         token_usage: Optional[Dict[str, Any]] = state.get("token_usage")
         for iteration in range(self.config.max_iterations):
             step_started = perf_counter()
+            llm_started = perf_counter()
+            yield self._event(
+                "llm_started",
+                run_id,
+                request.session_id,
+                step_index=iteration,
+                payload={"phase": "react_planning", "model": getattr(self.llm_client, "model_name", None)},
+            )
             try:
                 action, usage = self._generate_action(request, memory.prompt_text(), trace)
                 token_usage = _merge_token_usage(token_usage, usage)
@@ -398,6 +432,13 @@ class AgentService:
                 token_usage = _merge_token_usage(
                     token_usage,
                     getattr(exc, "token_usage", None),
+                )
+                yield self._event(
+                    "llm_finished",
+                    run_id,
+                    request.session_id,
+                    step_index=iteration,
+                    payload={"phase": "react_planning", "ok": False, "latency_ms": (perf_counter() - llm_started) * 1000},
                 )
                 yield self._event(
                     "error",
@@ -418,6 +459,19 @@ class AgentService:
                     error=error,
                 )
                 return
+
+            yield self._event(
+                "llm_finished",
+                run_id,
+                request.session_id,
+                step_index=iteration,
+                payload={
+                    "phase": "react_planning",
+                    "ok": True,
+                    "latency_ms": (perf_counter() - llm_started) * 1000,
+                    "token_usage": usage,
+                },
+            )
 
             step_token_usage = usage
 
@@ -533,19 +587,43 @@ class AgentService:
                     tool_name=call.name,
                     payload={"call_id": call.call_id, "arguments": call.arguments},
                 )
-            executed = self.registry.execute_many(
+                spec = self.registry.get(call.name)
+                if spec is not None and spec.may_call_llm:
+                    yield self._event(
+                        "llm_started",
+                        run_id,
+                        request.session_id,
+                        step_index=iteration,
+                        tool_name=call.name,
+                        payload={"phase": "tool_internal", "call_id": call.call_id},
+                    )
+            executed = self.registry.execute_many_stream(
                 calls,
                 timeout_seconds=self.config.tool_timeout_seconds,
                 retries=self.config.tool_retry_count,
                 max_workers=self.config.max_workers,
             )
+            completed_by_call_id: Dict[str, ToolResult] = {}
             for result in executed:
                 merged = self._merge_citations(result, citations)
-                observations.append(merged)
+                if merged.call_id:
+                    completed_by_call_id[merged.call_id] = merged
+                else:
+                    observations.append(merged)
                 self.metrics.record_tool(merged)
                 tool_usage = self._tool_token_usage(merged)
                 token_usage = _merge_token_usage(token_usage, tool_usage)
                 step_token_usage = _merge_token_usage(step_token_usage, tool_usage)
+                spec = self.registry.get(merged.tool_name)
+                if spec is not None and spec.may_call_llm:
+                    yield self._event(
+                        "llm_finished",
+                        run_id,
+                        request.session_id,
+                        step_index=iteration,
+                        tool_name=merged.tool_name,
+                        payload={"phase": "tool_internal", "call_id": merged.call_id, "ok": merged.ok, "token_usage": tool_usage},
+                    )
                 yield self._event(
                     "tool_finished",
                     run_id,
@@ -554,6 +632,13 @@ class AgentService:
                     tool_name=merged.tool_name,
                     payload={"result": merged.model_dump(mode="json")},
                 )
+            # Completion events are emitted as soon as each worker returns, but
+            # persisted trace observations deliberately retain model call order.
+            observations = [
+                completed_by_call_id[call.call_id]
+                for call in calls
+                if call.call_id in completed_by_call_id
+            ] + observations
             status = "completed"
             if any(item.error and "timed out" in item.error for item in observations):
                 status = "timeout"
@@ -594,6 +679,7 @@ class AgentService:
         """Yield transport-neutral Agent events in execution order."""
 
         request = self._request(request)
+        _EVENT_SEQUENCE.set(0)
         run_started_at = perf_counter()
         run_id = str(uuid4())
         trace: List[AgentTraceStep] = []
@@ -623,6 +709,17 @@ class AgentService:
             )
             try:
                 route = self.router.decide(request)
+                yield self._event(
+                    "route_selected",
+                    run_id,
+                    request.session_id,
+                    payload={
+                        "mode": route.mode,
+                        "reason": route.reason,
+                        "uses_llm": route.mode != "direct",
+                        "tool_name": route.tool_name,
+                    },
+                )
                 if route.mode == "direct":
                     yield from self._run_direct(
                         run_id, request, route, trace, citations, state

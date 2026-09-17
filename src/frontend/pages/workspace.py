@@ -1,7 +1,7 @@
 import streamlit as st
 
 from src.frontend.components.answer import render_answer
-from src.frontend.components.details import inspector
+from src.frontend.components.details import inspector, live_timeline
 
 
 def send(app, message, metadata=None):
@@ -32,7 +32,7 @@ def render(app):
 
     was_busy = app.busy
 
-    @st.fragment(run_every=0.6)
+    @st.fragment(run_every=0.25)
     def conversation_panel():
         active = app.get_conversation(st.session_state.conversation_id) if st.session_state.conversation_id else None
         messages = active['messages'] if active else []
@@ -45,6 +45,11 @@ def render(app):
                 avatar = ':material/person:' if message['role'] == 'user' else ':material/auto_awesome:'
                 with st.chat_message(message['role'], avatar=avatar):
                     render_answer(message)
+                    if message['role'] == 'assistant' and message['status'] in ('queued', 'running'):
+                        try:
+                            live_timeline(app.read_events(message['run_id'])['events'], compact=True)
+                        except ValueError:
+                            pass
                     if message.get('error'):
                         st.error(message['error'])
                     if message['role'] == 'assistant':
