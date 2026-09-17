@@ -270,7 +270,7 @@ class Application:
             from src.backend.rag import GenerationConfig
             self.agent.llm_client.generate(
                 RAGPrompt(system='Reply with OK only.', user='Connection check'),
-                GenerationConfig(temperature=0, max_output_tokens=128),
+                GenerationConfig(temperature=0, max_output_tokens=1024),
             )
         except Exception as exc:
             if previous is None:
@@ -293,7 +293,7 @@ class Application:
                 from src.backend.rag import GenerationConfig
                 result = {'checked_at': now()}
                 try:
-                    self.agent.llm_client.generate(RAGPrompt(system='Reply OK.', user='Connectivity check'), GenerationConfig(max_output_tokens=128))
+                    self.agent.llm_client.generate(RAGPrompt(system='Reply OK.', user='Connectivity check'), GenerationConfig(max_output_tokens=1024))
                     result['llm'] = {'ok': True, 'message': 'DeepSeek API 连接成功'}
                 except Exception as exc:
                     result['llm'] = {'ok': False, 'message': friendly_error(exc)}

@@ -51,7 +51,10 @@ rag:
   api_key_env: DEEPSEEK_API_KEY
   timeout_seconds: 60
   max_context_chars: 6000
-  max_output_tokens: 512
+  # deepseek-flash emits reasoning tokens before its visible answer. 512 can
+  # end at the reasoning budget with an empty content field, so leave room for
+  # both the reasoning phase and the grounded answer.
+  max_output_tokens: 1024
   temperature: 0.2
   top_p: 0.9
   top_k: null

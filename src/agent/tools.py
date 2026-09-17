@@ -288,7 +288,21 @@ class InMemoryPaperCatalog:
         self._papers[paper.paper_id] = paper
 
     def get(self, paper_id: str) -> Optional[PaperRecord]:
-        return self._papers.get(paper_id)
+        """Resolve an internal document ID or an unambiguous uploaded filename.
+
+        The catalog continues to retain the backend document ID as the paper
+        identity.  A filename is merely a user-facing alias: it is accepted
+        only when exactly one indexed document has that exact filename.  This
+        lets an Agent refer to a paper the user named without guessing IDs or
+        extracting metadata from the filename.
+        """
+
+        lookup = paper_id.strip()
+        direct = self._papers.get(lookup)
+        if direct is not None:
+            return direct
+        matches = [paper for paper in self._papers.values() if paper.file_name == lookup]
+        return matches[0] if len(matches) == 1 else None
 
     def ids(self) -> List[str]:
         return sorted(self._papers)
@@ -658,7 +672,7 @@ def build_default_tool_registry(
     registry.register(
         ToolSpec(
             name="paper_metadata",
-            description="Read metadata for a paper from the injected paper catalog.",
+            description="Read metadata for one indexed paper. paper_id must be an exact backend document ID or an exact unique uploaded filename stated by the user.",
             handler=paper_metadata,
             input_schema={"type": "object", "required": ["paper_id"], "properties": {"paper_id": {"type": "string"}}},
         )
@@ -666,7 +680,7 @@ def build_default_tool_registry(
     registry.register(
         ToolSpec(
             name="paper_compare",
-            description="Compare two papers from the injected paper catalog.",
+            description="Compare two indexed papers. Each ID must be an exact backend document ID or an exact unique uploaded filename stated by the user.",
             handler=paper_compare,
             input_schema={"type": "object", "required": ["paper_a", "paper_b"], "properties": {"paper_a": {"type": "string"}, "paper_b": {"type": "string"}}},
         )
@@ -682,7 +696,7 @@ def build_default_tool_registry(
     registry.register(
         ToolSpec(
             name="paper_summary",
-            description="Return a structured extractive paper summary or an injected summary result.",
+            description="Return a structured summary for one indexed paper. paper_id must be an exact backend document ID or an exact unique uploaded filename stated by the user; text may be supplied instead.",
             handler=paper_summary,
             input_schema={"type": "object", "properties": {"paper_id": {"type": "string"}, "text": {"type": "string"}}},
             may_call_llm=summary_fn is not None,

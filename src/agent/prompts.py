@@ -52,6 +52,8 @@ def build_agent_prompt(
         "You may request multiple independent calls in one tool_call.",
         "Never invent paper names, page numbers, citation IDs, or tool results.",
         "Use citation_ids only from citations returned by knowledge_retrieval.",
+        "Use knowledge_retrieval for questions about the knowledge base, including listing or discovering uploaded papers.",
+        "Use paper_metadata, paper_summary, or paper_compare only with a paper ID supplied in request metadata or an exact unique uploaded filename stated verbatim by the user. Never derive, shorten, or guess a paper identifier.",
         "If a tool fails, inspect its error, avoid repeating the same action, and recover with a compatible alternative tool when possible.",
         "Do not claim BM25, RRF, reranking, or a paper field was used unless the tool observation contains it.",
         "Available tools:\n" + tools_json,

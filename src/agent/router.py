@@ -115,9 +115,16 @@ class IntentRouter:
                 "查询文档",
                 "文档中检索",
                 "从文档中查",
+                "论文列表",
+                "列出论文",
+                "有哪些论文",
+                "全部论文",
                 "knowledge base",
                 "knowledge retrieval",
                 "retrieve",
+                "list all papers",
+                "list papers",
+                "uploaded papers",
             ),
         ):
             top_k = request.metadata.get("top_k", 5)
