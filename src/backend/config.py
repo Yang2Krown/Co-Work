@@ -51,9 +51,14 @@ class RetrievalConfig(_ConfigModel):
     enable_rrf: bool = True
     rrf_k: int = Field(default=60, gt=0)
     enable_reranker: bool = True
+    reranker_provider: Literal["local", "dashscope"] = "local"
     reranker_model_name: str = "bge-reranker-base"
     reranker_top_n: int = Field(default=20, gt=0)
     reranker_batch_size: int = Field(default=16, gt=0)
+    reranker_api_base: Optional[str] = None
+    reranker_api_base_env: str = "DASHSCOPE_API_BASE"
+    reranker_api_key_env: str = "DASHSCOPE_API_KEY"
+    reranker_timeout_seconds: float = Field(default=30.0, gt=0)
 
 
 class RagConfig(_ConfigModel):

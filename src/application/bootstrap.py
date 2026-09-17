@@ -134,7 +134,15 @@ class BackendResources:
             c.vector_store.faiss_num_threads,
         )
         self.reranker = (
-            Reranker(c.retrieval.reranker_model_name, batch_size=c.retrieval.reranker_batch_size)
+            Reranker(
+                c.retrieval.reranker_model_name,
+                batch_size=c.retrieval.reranker_batch_size,
+                provider=c.retrieval.reranker_provider,
+                api_base=c.retrieval.reranker_api_base,
+                api_base_env=c.retrieval.reranker_api_base_env,
+                api_key_env=c.retrieval.reranker_api_key_env,
+                timeout_seconds=c.retrieval.reranker_timeout_seconds,
+            )
             if c.retrieval.enable_reranker else None
         )
 

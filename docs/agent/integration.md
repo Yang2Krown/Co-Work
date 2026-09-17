@@ -56,7 +56,7 @@ Embedding 接口。`config/backend.yaml` 默认配置为：
 ```yaml
 embedding:
   provider: dashscope
-  model_name: text-embedding-v4
+  model_name: qwen3.7-text-embedding
   api_base_env: DASHSCOPE_API_BASE
   api_key_env: DASHSCOPE_API_KEY
 ```
@@ -135,6 +135,14 @@ RAG 则为
 
 前端只应展示事件的安全摘要、白名单工具参数、耗时、Token、结构化结果和后端 Citation；
 不得展示 API Key、完整 Prompt、原始异常堆栈或模型隐藏推理。
+
+默认 Agent 工具超时为 90 秒。知识库工具的这段时间包含 DashScope 查询向量化、
+向量 + BM25 + RRF、DashScope 在线 reranker 和 DeepSeek 生成；联网搜索没有注入 `search_fn` 时会
+立即返回“未配置”，不会访问网络。
+
+当前默认重排模型是 `qwen3.7-text-rerank`，复用 `.env` 中的 `DASHSCOPE_API_KEY` 与
+`DASHSCOPE_API_BASE`。它使用百炼原生 Rerank 端点；程序会从同一主机地址派生正确路径，
+无需额外填写 URL，也不会下载本地 CrossEncoder 权重。
 
 ## 安全与默认边界
 
