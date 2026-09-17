@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, Mapping, Optional, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from ..env import load_dotenv
 from ..exceptions import LLMServiceError
 from .prompt import RAGPrompt
 
@@ -73,6 +74,7 @@ class OpenAICompatibleClient:
         return self.api_base + "/chat/completions"
 
     def _headers(self) -> Dict[str, str]:
+        load_dotenv()
         headers = {"Content-Type": "application/json"}
         if self.api_key_env:
             api_key = os.getenv(self.api_key_env)

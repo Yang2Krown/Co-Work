@@ -7,10 +7,16 @@ chunking:
   chunk_overlap: 64
 
 embedding:
-  provider: local
-  model_name: bge-large-zh
-  batch_size: 32
+  # DashScope OpenAI-compatible text embedding endpoint. Keep the workspace
+  # host and API key in environment variables; never commit them here.
+  provider: dashscope
+  model_name: text-embedding-v4
+  batch_size: 20
   normalize_embeddings: true
+  api_base: null
+  api_base_env: DASHSCOPE_API_BASE
+  api_key_env: DASHSCOPE_API_KEY
+  timeout_seconds: 60
 
 vector_store:
   type: chroma
@@ -32,9 +38,9 @@ retrieval:
 
 rag:
   provider: openai_compatible
-  model_name: gpt-4o-mini
-  api_base: https://api.openai.com/v1
-  api_key_env: OPENAI_API_KEY
+  model_name: deepseek-flash
+  api_base: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
   timeout_seconds: 60
   max_context_chars: 6000
   max_output_tokens: 512

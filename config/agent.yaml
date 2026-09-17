@@ -1,7 +1,7 @@
 # Agent orchestration limits. No model credentials belong in this file.
 llm:
   provider: openai_compatible
-  model_name: deepseek-v4-flash
+  model_name: deepseek-flash
   api_base: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
   timeout_seconds: 60

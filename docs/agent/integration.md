@@ -35,12 +35,11 @@ client，避免两套模型配置或两份 Token 统计。
 当前后端契约只保证 `RAGResponse.latency_ms`；如果后端未来提供独立的
 `retrieval_latency_ms`，Agent 会优先使用它，并在结果中标注 `latency_source`。
 
-本地先准备密钥：
+本地先准备模型密钥与 DashScope Embedding 端点：
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入真实 DeepSeek Key；随后仅在本地执行
-source .env
+# 编辑仓库根目录的 .env：填入 DEEPSEEK_API_KEY、DASHSCOPE_API_KEY 和工作空间对应的 DASHSCOPE_API_BASE
+# 程序会自动读取 .env；不要在终端执行 export 或 source。
 ```
 
 `build_deepseek_agent_service`、`build_deepseek_rag_agent_service` 和 `create_app` 不在 import 或构造阶段发起网络请求，
@@ -48,6 +47,34 @@ source .env
 `deepseek-v4-flash`，地址是 `https://api.deepseek.com`。确定性工具不依赖 Key；传入的
 `rag_service` 仍按 `docs/backend/integration_contract.md` 由后端成员负责其自身配置。
 API key 不随请求传给 Agent，也不得写入 YAML、代码、日志或提交到 Git。
+
+### DashScope Embedding 与建库
+
+项目默认不下载本地 Embedding 权重，而是使用阿里云百炼的 OpenAI-compatible
+Embedding 接口。`config/backend.yaml` 默认配置为：
+
+```yaml
+embedding:
+  provider: dashscope
+  model_name: text-embedding-v4
+  api_base_env: DASHSCOPE_API_BASE
+  api_key_env: DASHSCOPE_API_KEY
+```
+
+其中 `DASHSCOPE_API_BASE` 必须是百炼控制台中当前地域、当前工作空间的
+OpenAI-compatible Base URL，例如
+`https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`。它和 Key
+均只保存在本地 `.env`；不得把真实工作空间信息或 Key 写入仓库。
+
+准备好论文 PDF 后建立（或增量更新）向量索引：
+
+```bash
+python3 scripts/build_index.py data/samples/papers/*.pdf
+```
+
+建库时每个分块会调用 DashScope Embedding，向量写入配置的 Chroma 目录；查询时使用
+同一个模型生成查询向量，因此不能在同一索引上任意切换 Embedding 模型或维度。BM25
+索引由同批文档分块在运行时构建，不需要 API Key。
 
 ## HTTP 接口
 

@@ -26,10 +26,14 @@ class ChunkingConfig(_ConfigModel):
 
 
 class EmbeddingConfig(_ConfigModel):
-    provider: str = "local"
-    model_name: str = "bge-large-zh"
-    batch_size: int = Field(default=32, gt=0)
+    provider: Literal["local", "dashscope"] = "dashscope"
+    model_name: str = "text-embedding-v4"
+    batch_size: int = Field(default=20, gt=0)
     normalize_embeddings: bool = True
+    api_base: Optional[str] = None
+    api_base_env: str = "DASHSCOPE_API_BASE"
+    api_key_env: str = "DASHSCOPE_API_KEY"
+    timeout_seconds: float = Field(default=60.0, gt=0)
 
 
 class VectorStoreConfig(_ConfigModel):
