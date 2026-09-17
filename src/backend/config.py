@@ -68,7 +68,8 @@ class RagConfig(_ConfigModel):
     api_key_env: str = "OPENAI_API_KEY"
     timeout_seconds: float = Field(default=60.0, gt=0)
     max_context_chars: int = Field(default=6000, gt=0)
-    max_output_tokens: int = Field(default=512, gt=0)
+    # None omits max_tokens and delegates the output limit to the provider.
+    max_output_tokens: Optional[int] = Field(default=None, gt=0)
     temperature: float = Field(default=0.2, ge=0)
     top_p: float = Field(default=0.9, gt=0, le=1)
     top_k: Optional[int] = Field(default=None, gt=0)

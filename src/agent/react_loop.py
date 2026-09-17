@@ -19,7 +19,7 @@ except Exception:  # pragma: no cover - only for partial dependency environments
         temperature: float = 0.2
         top_p: float = 0.9
         top_k: Optional[int] = None
-        max_output_tokens: int = 512
+        max_output_tokens: Optional[int] = None
 
 
 class AgentModel(Protocol):

@@ -2,7 +2,7 @@
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, Iterator, Mapping, Optional, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -19,7 +19,8 @@ class GenerationConfig:
     temperature: float = 0.2
     top_p: float = 0.9
     top_k: Optional[int] = None
-    max_output_tokens: int = 512
+    # ``None`` omits max_tokens and lets the provider use its model default.
+    max_output_tokens: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.temperature < 0:
@@ -28,7 +29,7 @@ class GenerationConfig:
             raise ValueError("top_p must be in the interval (0, 1]")
         if self.top_k is not None and self.top_k <= 0:
             raise ValueError("top_k must be greater than zero when provided")
-        if self.max_output_tokens <= 0:
+        if self.max_output_tokens is not None and self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be greater than zero")
 
 
@@ -48,6 +49,11 @@ class LLMClient(Protocol):
 
 class OpenAICompatibleClient:
     """Minimal JSON/SSE client for OpenAI-compatible chat endpoints."""
+
+    # Some reasoning models spend the first part of the completion budget on
+    # hidden reasoning. Retry only the specific "length + no visible answer"
+    # response, with a bounded expansion rather than retrying provider errors.
+    _AUTO_EXPANSION_TOKENS = (4096, 6144, 8192)
 
     def __init__(
         self,
@@ -96,9 +102,10 @@ class OpenAICompatibleClient:
             "messages": prompt.messages,
             "temperature": config.temperature,
             "top_p": config.top_p,
-            "max_tokens": config.max_output_tokens,
             "stream": stream,
         }
+        if config.max_output_tokens is not None:
+            payload["max_tokens"] = config.max_output_tokens
         if config.top_k is not None:
             payload["top_k"] = config.top_k
         return json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -133,49 +140,105 @@ class OpenAICompatibleClient:
             )
         return ""
 
-    def generate(self, prompt: RAGPrompt, config: GenerationConfig) -> LLMResponse:
-        with self._request(prompt, config, stream=False) as response:
-            try:
-                payload = json.loads(response.read().decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise LLMServiceError("LLM returned invalid JSON") from exc
+    @classmethod
+    def _expanded_config(cls, config: GenerationConfig) -> Optional[GenerationConfig]:
+        """Return the next length-recovery budget, or ``None`` when exhausted."""
 
-        try:
-            choice = payload["choices"][0]
-            text = self._message_text(choice["message"]["content"])
-        except (KeyError, IndexError, TypeError) as exc:
-            raise LLMServiceError("LLM response did not contain message content") from exc
-        if not text:
-            raise LLMServiceError("LLM returned an empty response")
-        usage = payload.get("usage")
-        return LLMResponse(
-            text=text,
-            token_usage=dict(usage) if isinstance(usage, Mapping) else None,
+        current = config.max_output_tokens
+        for budget in cls._AUTO_EXPANSION_TOKENS:
+            if current is None or budget > current:
+                return replace(config, max_output_tokens=budget)
+        return None
+
+    @staticmethod
+    def _merge_usage(
+        accumulated: Optional[Dict[str, Any]],
+        current: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """Preserve token consumption from a length-recovery retry."""
+
+        if not isinstance(current, Mapping):
+            return accumulated
+        merged = dict(accumulated or {})
+        for key, value in current.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                previous = merged.get(key, 0)
+                merged[key] = previous + value if isinstance(previous, (int, float)) else value
+            elif key not in merged:
+                merged[key] = value
+        return merged
+
+    @staticmethod
+    def _truncated_without_text(choice: Any, text: str) -> bool:
+        return (
+            isinstance(choice, Mapping)
+            and not text
+            and str(choice.get("finish_reason", "")).lower() == "length"
         )
 
+    def generate(self, prompt: RAGPrompt, config: GenerationConfig) -> LLMResponse:
+        effective_config = config
+        accumulated_usage: Optional[Dict[str, Any]] = None
+        while True:
+            with self._request(prompt, effective_config, stream=False) as response:
+                try:
+                    payload = json.loads(response.read().decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise LLMServiceError("LLM returned invalid JSON") from exc
+
+            try:
+                choice = payload["choices"][0]
+                text = self._message_text(choice["message"]["content"])
+            except (KeyError, IndexError, TypeError) as exc:
+                raise LLMServiceError("LLM response did not contain message content") from exc
+            accumulated_usage = self._merge_usage(accumulated_usage, payload.get("usage"))
+            if text:
+                return LLMResponse(text=text, token_usage=accumulated_usage)
+            if not self._truncated_without_text(choice, text):
+                raise LLMServiceError("LLM returned an empty response")
+            expanded_config = self._expanded_config(effective_config)
+            if expanded_config is None:
+                raise LLMServiceError("LLM returned an empty response after output-budget recovery")
+            effective_config = expanded_config
+
     def stream(self, prompt: RAGPrompt, config: GenerationConfig) -> Iterator[str]:
-        received_text = False
+        effective_config = config
         try:
-            with self._request(prompt, config, stream=True) as response:
-                for raw_line in response:
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                    if not line or not line.startswith("data:"):
+            while True:
+                received_text = False
+                completed = False
+                finish_reason = ""
+                with self._request(prompt, effective_config, stream=True) as response:
+                    for raw_line in response:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            completed = True
+                            break
+                        try:
+                            payload = json.loads(data)
+                            choice = payload["choices"][0]
+                            delta = choice.get("delta", {})
+                            text = self._message_text(delta.get("content"))
+                            finish_reason = str(choice.get("finish_reason") or finish_reason)
+                        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                            raise LLMServiceError("LLM stream returned invalid JSON") from exc
+                        if text:
+                            received_text = True
+                            yield text
+                if received_text and completed:
+                    return
+                if not received_text and completed and finish_reason.lower() == "length":
+                    expanded_config = self._expanded_config(effective_config)
+                    if expanded_config is not None:
+                        effective_config = expanded_config
                         continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        if not received_text:
-                            raise LLMServiceError("LLM returned an empty streamed answer")
-                        return
-                    try:
-                        payload = json.loads(data)
-                        delta = payload["choices"][0].get("delta", {})
-                        text = self._message_text(delta.get("content"))
-                    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
-                        raise LLMServiceError("LLM stream returned invalid JSON") from exc
-                    if text:
-                        received_text = True
-                        yield text
-            raise LLMServiceError("LLM stream ended before completion")
+                    raise LLMServiceError("LLM returned an empty streamed answer after output-budget recovery")
+                if completed:
+                    raise LLMServiceError("LLM returned an empty streamed answer")
+                raise LLMServiceError("LLM stream ended before completion")
         except LLMServiceError:
             raise
         except (UnicodeDecodeError, OSError) as exc:
