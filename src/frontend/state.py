@@ -16,6 +16,9 @@ def initialize():
         'selected_message': None,
         'api_verified': False,
         'api_error': None,
+        'analysis_mode': '摘要',
+        'analysis_result': None,
+        'analysis_error': None,
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
