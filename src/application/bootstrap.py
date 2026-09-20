@@ -57,6 +57,7 @@ class SafeClient:
         self.client = client
         for name in ('model_name', 'api_base', 'api_key_env', 'timeout_seconds'):
             setattr(self, name, getattr(client, name))
+        self.last_token_usage = None
 
     def generate(self, prompt, config):
         try:
@@ -69,6 +70,8 @@ class SafeClient:
             yield from self.client.stream(prompt, config)
         except Exception as exc:
             raise LLMServiceError(friendly_error(exc)) from None
+        finally:
+            self.last_token_usage = getattr(self.client, 'last_token_usage', None)
 
 class EmptyRetriever:
     def retrieve(self, query, mode='hybrid_rerank', top_k=5):

@@ -2,6 +2,8 @@ from typing import Iterator, List
 
 from src.backend.exceptions import LLMServiceError
 from src.backend.rag import GenerationConfig, LLMResponse, RAGService
+from src.backend.rag.llm_client import OpenAICompatibleClient
+from src.backend.rag.prompt import RAGPrompt
 from src.backend.schemas import RetrievalResult
 
 
@@ -28,7 +30,15 @@ class StubRetriever:
 class StubLLM:
     model_name = "test-model"
 
+    def __init__(self) -> None:
+        self.last_token_usage = None
+
     def stream(self, prompt, config: GenerationConfig) -> Iterator[str]:
+        self.last_token_usage = {
+            "prompt_tokens": 11,
+            "completion_tokens": 5,
+            "total_tokens": 16,
+        }
         yield "answer"
 
     def generate(self, prompt, config: GenerationConfig) -> LLMResponse:
@@ -81,6 +91,12 @@ def test_structured_stream_starts_with_grounded_metadata_and_ends() -> None:
     assert events[1].citations[0].chunk_id == "chunk-1"
     assert events[1].retrieved_chunks[0].chunk_id == "chunk-1"
     assert events[4].text == "answer"
+    assert events[5].metadata["token_usage"] == {
+        "prompt_tokens": 11,
+        "completion_tokens": 5,
+        "total_tokens": 16,
+    }
+    assert events[-1].metadata["token_usage"] == events[5].metadata["token_usage"]
     assert [event.sequence for event in events] == list(range(1, len(events) + 1))
 
 
@@ -96,3 +112,32 @@ def test_structured_stream_reports_provider_error() -> None:
     assert events[1].citations[0].page_number == 5
     assert events[4].text == "生成服务暂时不可用，请稍后重试。"
     assert events[4].error == "LLMServiceError: provider unavailable"
+
+
+def test_openai_stream_collects_provider_usage_frame(monkeypatch) -> None:
+    client = OpenAICompatibleClient(
+        model_name="deepseek-chat",
+        api_base="https://api.deepseek.com",
+        api_key_env="",
+    )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def __iter__(self):
+            yield b'data: {"choices":[{"delta":{"content":"answer"},"finish_reason":null}]}\n'
+            yield b'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}\n'
+            yield b"data: [DONE]\n"
+
+    monkeypatch.setattr(client, "_request", lambda *args, **kwargs: Response())
+
+    assert list(client.stream(RAGPrompt(system="system", user="user"), GenerationConfig())) == ["answer"]
+    assert client.last_token_usage == {
+        "prompt_tokens": 7,
+        "completion_tokens": 3,
+        "total_tokens": 10,
+    }

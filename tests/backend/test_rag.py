@@ -88,6 +88,16 @@ class StubRetriever:
         return self.results
 
 
+class MappingRetriever:
+    """Adapter-shaped retriever used to test the RAG schema boundary."""
+
+    def __init__(self, result: RetrievalResult) -> None:
+        self.result = result.model_dump(mode="json")
+
+    def retrieve(self, query: str, mode: str, top_k: int):
+        return [self.result]
+
+
 class StubLLM:
     def __init__(self) -> None:
         self.generate_calls = []
@@ -134,6 +144,15 @@ def test_rag_service_returns_answer_chunks_citations_and_stream() -> None:
     ]
     assert llm.generate_calls[0][1] == generation_config
     assert llm.stream_calls[0][1] == generation_config
+
+
+def test_rag_service_normalizes_adapter_results_before_response_validation() -> None:
+    service = RAGService(MappingRetriever(_result("chunk-1", "evidence", rank=1)), StubLLM())
+
+    response = service.answer("What is the result?")
+
+    assert response.retrieved_chunks[0].chunk_id == "chunk-1"
+    assert response.citations[0].chunk_id == "chunk-1"
 
 
 def test_rag_service_prompts_explicit_insufficient_evidence() -> None:

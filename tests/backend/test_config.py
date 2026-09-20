@@ -14,10 +14,10 @@ def test_load_backend_config() -> None:
 
     assert config.chunking.chunk_size == 512
     assert config.chunking.chunk_overlap == 64
-    assert config.embedding.model_name == "bge-large-zh"
+    assert config.embedding.model_name == "qwen3.7-text-embedding"
     assert config.retrieval.enable_rrf is True
     assert config.retrieval.bm25_top_k == 20
-    assert config.retrieval.reranker_model_name == "bge-reranker-base"
+    assert config.retrieval.reranker_model_name == "qwen3.7-text-rerank"
     assert config.rag.provider == "openai_compatible"
     assert config.rag.max_context_chars == 6000
     assert config.rag.top_k is None
