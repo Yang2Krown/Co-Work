@@ -1,6 +1,6 @@
 # 前端集成接口契约
 
-应用入口为 `src.application.Application(root)`。所有路径属于本地单人工作区；方法返回 Python dict 或标识字符串。与现有 HTTP 接口不冲突。代码中的 Pydantic 类型是字段结构的最终来源。
+应用入口为 `src.application.Application(root)`。所有路径属于本地单人工作区；方法返回 Python dict 或标识字符串。与现有 HTTP 接口不冲突。代码中的 Pydantic 类型是字段结构的最终来源。前端只暴露智能助理一个会话模式；底层 `rag` 模式仅为既有数据和后端测试保留。
 
 ## DeepSeek 组合边界
 
@@ -24,7 +24,7 @@ SafeClient 在错误到达 RAG 日志和 Agent trace 前移除供应商原始响
 | `list_conversations()` | 无 | 按创建时间倒序 |
 | `get_conversation(id)` | 标识 | Conversation + 按时间排序的 messages |
 | `delete_conversation(id)` | 标识 | 删除会话、消息、运行及 Agent 记忆；忙时拒绝 |
-| `start_turn(id,message,metadata)` | 1–8000 字符非空文本 | run_id；同步预留操作门，重复提交拒绝 |
+| `start_turn(id,message,metadata,mode)` | 1–8000 字符非空文本；前端固定传 `agent` | run_id；同步预留操作门，重复提交拒绝 |
 | `read_events(run_id,cursor=0)` | 已消费数量 | `{events,cursor,status,error}`；只返回新增事件 |
 | `get_status()` | 无 | provider、model、配置、知识库、busy、metrics、最近探测结果 |
 | `probe_dependencies()` | 无 | 后台执行 DeepSeek 小额生成 + 本地检索；结果写入状态 |
@@ -52,7 +52,9 @@ SQLite 存储 JSON 记录并启用 WAL，单连接通过 RLock 保护。Agent �
 
 UI 不直接驱动模型生成器。单工作线程驱动生成器，把事件和回答快照持续写入 SQLite。页面轮询读取，重绘不调用 start_turn。当前应用一次只允许一个操作，确保知识库更新和检索互斥。
 
-### RAG
+### RAG（智能助理内部能力）
+
+前端不再提供独立的知识库问答模式。智能助理通过 `knowledge_retrieval` 工具调用 RAG 服务，统一承载知识库检索、引用快照和回答生成；旧的直接 RAG 会话仍可读取，避免破坏历史数据。
 
 - metadata：保存真实 citations、retrieved_chunks；空列表保持为空。
 - token：逐片段追加文本，是真实供应商流，不做延迟动画。
@@ -60,7 +62,7 @@ UI 不直接驱动模型生成器。单工作线程驱动生成器，把事件�
 - end：终止；存在 error 为 failed，否则 completed。
 - 未出现 end：标记 interrupted；不自动重放。
 
-引用编号只在当前回答内有效。默认 top_k=5。直接 RAG 不具有多轮语义记忆。现有 RAG 流式接口未提供 Token 使用量，也未使用 answer() 的语义缓存；界面不伪造这些指标。Agent 的 knowledge_retrieval 调用 answer() 可复用语义缓存。
+引用编号只在当前回答内有效。默认 top_k=5。直接 RAG 不具有多轮语义记忆。现有 RAG 流式接口未提供 Token 使用量，也未使用 answer() 的语义缓存；界面不伪造这些指标。Agent 的 `knowledge_retrieval` 调用 `answer()` 可复用语义缓存。
 
 ### Agent
 

@@ -27,9 +27,14 @@ class LLM:
     api_base = 'https://api.deepseek.com'
     api_key_env = 'DEEPSEEK_API_KEY'
     timeout_seconds = 60
+
+    def __init__(self):
+        self.last_token_usage = None
+
     def generate(self, prompt, config):
         return LLMResponse('{"type":"final","answer":"fixture"}', {'total_tokens': 7})
     def stream(self, prompt, config):
+        self.last_token_usage = {'prompt_tokens': 9, 'completion_tokens': 4, 'total_tokens': 13}
         yield '论文'
         yield '回答 [1]'
 
@@ -79,6 +84,7 @@ def test_import_query_delete_updates_all_indexes(factory):
     assert app.read_events(run, events['cursor'])['events'] == []
     answer = app.get_conversation(conversation['conversation_id'])['messages'][-1]
     assert answer['content'] == '论文回答 [1]'
+    assert answer['token_usage'] == {'prompt_tokens': 9, 'completion_tokens': 4, 'total_tokens': 13}
     assert answer['citations'][0]['page_number'] is None
     identifier = app.documents.ready()[0].document_id
     version = app.rag.knowledge_base_version
@@ -117,6 +123,15 @@ def test_memory_and_history_persist_and_delete(factory, tmp_path):
     assert not app.db.list('run')
     assert not app.db.list('message')
     assert app.db.get('memory', c) is None
+
+
+def test_agent_mode_can_continue_legacy_rag_conversation(factory):
+    app = factory()
+    c = app.create_conversation('rag')['conversation_id']
+    run = app.start_turn(c, '3 * 7', mode='agent')
+    wait(app)
+    assert app.db.get('run', run)['mode'] == 'agent'
+    assert '21' in app.get_conversation(c)['messages'][-1]['content']
 
 
 def test_interruption_keeps_partial_and_excludes_duplicate_runs(factory):

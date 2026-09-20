@@ -72,6 +72,10 @@ class OpenAICompatibleClient:
         self.api_base = api_base.rstrip("/")
         self.api_key_env = api_key_env
         self.timeout_seconds = timeout_seconds
+        # Streaming providers return usage in a final, empty-choice SSE
+        # frame. Keep it on the client so the structured RAG stream can
+        # persist the real provider count alongside the answer.
+        self.last_token_usage: Optional[Dict[str, Any]] = None
 
     @property
     def endpoint(self) -> str:
@@ -108,6 +112,10 @@ class OpenAICompatibleClient:
             payload["max_tokens"] = config.max_output_tokens
         if config.top_k is not None:
             payload["top_k"] = config.top_k
+        if stream:
+            # DeepSeek follows the OpenAI-compatible streaming usage shape.
+            # Without this flag, the provider normally omits usage from SSE.
+            payload["stream_options"] = {"include_usage": True}
         return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
     def _request(self, prompt: RAGPrompt, config: GenerationConfig, stream: bool):
@@ -203,11 +211,14 @@ class OpenAICompatibleClient:
 
     def stream(self, prompt: RAGPrompt, config: GenerationConfig) -> Iterator[str]:
         effective_config = config
+        accumulated_usage: Optional[Dict[str, Any]] = None
+        self.last_token_usage = None
         try:
             while True:
                 received_text = False
                 completed = False
                 finish_reason = ""
+                attempt_usage: Optional[Dict[str, Any]] = None
                 with self._request(prompt, effective_config, stream=True) as response:
                     for raw_line in response:
                         line = raw_line.decode("utf-8", errors="replace").strip()
@@ -219,7 +230,13 @@ class OpenAICompatibleClient:
                             break
                         try:
                             payload = json.loads(data)
-                            choice = payload["choices"][0]
+                            attempt_usage = self._merge_usage(attempt_usage, payload.get("usage"))
+                            choices = payload.get("choices") or []
+                            # The final usage frame is allowed to contain no
+                            # choices, so it must not be treated as malformed.
+                            if not choices:
+                                continue
+                            choice = choices[0]
                             delta = choice.get("delta", {})
                             text = self._message_text(delta.get("content"))
                             finish_reason = str(choice.get("finish_reason") or finish_reason)
@@ -228,9 +245,12 @@ class OpenAICompatibleClient:
                         if text:
                             received_text = True
                             yield text
+                request_usage = self._merge_usage(accumulated_usage, attempt_usage)
                 if received_text and completed:
+                    self.last_token_usage = request_usage
                     return
                 if not received_text and completed and finish_reason.lower() == "length":
+                    accumulated_usage = request_usage
                     expanded_config = self._expanded_config(effective_config)
                     if expanded_config is not None:
                         effective_config = expanded_config

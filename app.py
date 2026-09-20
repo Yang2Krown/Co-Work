@@ -1,19 +1,35 @@
 """Run with: streamlit run app.py"""
+import importlib
 import os
 
 import streamlit as st
 from src.frontend.state import application, initialize
-from src.frontend.theme import apply_theme
-from src.frontend.pages import workspace, library
+from src.frontend import theme as frontend_theme
+from src.frontend.components import answer, details, markdown as markdown_renderer, page
+from src.frontend.pages import analysis, library, status, workspace
 
-st.set_page_config(page_title='Co-Work', page_icon=':material/library_books:', layout='wide', initial_sidebar_state='expanded')
+# Streamlit reruns this module in a long-lived process. Reload the frontend
+# modules explicitly so a running local workspace cannot keep rendering an
+# older imported theme/page after a source edit.
+for _module in (frontend_theme, markdown_renderer, page, answer, details, workspace, library, analysis, status):
+    importlib.reload(_module)
+
+apply_theme = frontend_theme.apply_theme
+
+st.set_page_config(page_title='研究工作台', page_icon=':material/library_books:', layout='wide', initial_sidebar_state='expanded')
 apply_theme()
 initialize()
 app = application()
 
+# The local workspace already loads DeepSeek credentials from .env. Do not
+# make users re-enter a key that is already configured; connection probing is
+# available from the system status page when it is needed.
+if os.getenv('DEEPSEEK_API_KEY'):
+    st.session_state.api_verified = True
+
 def connection_gate():
     st.html('''
-    <div class="cw-setup-kicker">CO-WORK / CONNECTION</div>
+    <div class="cw-setup-kicker">研究工作台 / 连接</div>
     <div class="cw-setup-title">连接 DeepSeek</div>
     <div class="cw-setup-copy">工作区会先发起一次连接检查。验证通过后，才会开放文件上传和聊天。</div>
     ''')
@@ -59,20 +75,27 @@ def delete_conversation(identifier):
         st.rerun()
 
 with st.sidebar:
-    st.html('<div class="cw-window"><i></i><i></i><i></i><strong>Co-Work</strong></div>')
-    st.caption('研究资料工作区')
-    for page, icon in (('聊天', ':material/chat_bubble_outline:'), ('知识库', ':material/folder_open:')):
+    st.html('<div class="cw-brand"><strong>研究工作台</strong></div>')
+    if st.button('新建会话', icon=':material/add:', type='primary', use_container_width=True, disabled=app.busy):
+        st.session_state.conversation_id = None
+        st.session_state.selected_message = None
+        st.session_state.inspector = False
+        st.session_state.page = '聊天'
+        st.rerun()
+    st.html('<div class="cw-sidebar-label">工作区</div>')
+    for page, icon in (
+        ('聊天', ':material/chat_bubble_outline:'),
+        ('知识库', ':material/folder_open:'),
+        ('论文分析', ':material/compare_arrows:'),
+        ('系统状态', ':material/monitor_heart:'),
+    ):
         kind = 'primary' if st.session_state.page == page else 'secondary'
         if st.button(page, icon=icon, type=kind, use_container_width=True):
             st.session_state.page = page
+            st.session_state.inspector = False
             st.rerun()
     st.divider()
-    if st.button('新建会话', icon=':material/add:', use_container_width=True, disabled=app.busy):
-        st.session_state.conversation_id = None
-        st.session_state.selected_message = None
-        st.session_state.page = '聊天'
-        st.rerun()
-    st.caption('最近会话')
+    st.html('<div class="cw-sidebar-label">最近会话</div>')
     for c in app.list_conversations():
         if st.button(c['title'], key=c['conversation_id'], use_container_width=True):
             st.session_state.conversation_id = c['conversation_id']
@@ -82,8 +105,9 @@ with st.sidebar:
     if st.session_state.conversation_id:
         if st.button('删除当前会话', icon=':material/delete_outline:', disabled=app.busy, use_container_width=True):
             delete_conversation(st.session_state.conversation_id)
-    st.html('<div class="cw-sidebar-spacer"></div>')
     ready_count = sum(d['status'] == 'ready' for d in app.list_documents())
-    st.caption(f'已连接 · {ready_count} 份资料')
+    st.html(f'<div class="cw-sidebar-status">已连接 · {ready_count} 份资料</div>')
 
-{'聊天': workspace.render, '知识库': library.render}[st.session_state.page](app)
+{'聊天': workspace.render, '知识库': library.render, '论文分析': analysis.render, '系统状态': status.render}.get(
+    st.session_state.page, workspace.render
+)(app)

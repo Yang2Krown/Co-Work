@@ -76,7 +76,9 @@ class RAGService:
 
         if isinstance(exc, LLMServiceError):
             # Composition wraps known provider failures into a user-safe message.
-            return str(exc)[:500]
+            text = str(exc).strip() or "provider request failed"
+            prefix = type(exc).__name__ + ": "
+            return (text if text.startswith(prefix) else prefix + text)[:500]
         detail = str(exc).lower()
         if any(marker in detail for marker in ("401", "403", "api key", "authorization", "authentication")):
             return type(exc).__name__ + ": provider authentication failed"
@@ -102,11 +104,25 @@ class RAGService:
         effective_top_k = self.default_top_k if top_k is None else top_k
         if effective_top_k <= 0:
             raise ValueError("top_k must be greater than zero")
-        results = self.retriever.retrieve(
+        raw_results = self.retriever.retrieve(
             question,
             mode=self.retrieval_mode,
             top_k=effective_top_k,
         )
+        # Retrievers normally return ``RetrievalResult`` instances. The
+        # application also keeps long-lived Streamlit workers and can observe
+        # results created before a module reload, or receive JSON-shaped
+        # results from an adapter. Re-validating through the current schema
+        # makes that boundary stable instead of letting Pydantic reject a
+        # structurally valid result whose class identity is stale.
+        results = [
+            RetrievalResult.model_validate(
+                result.model_dump(mode="json")
+                if hasattr(result, "model_dump")
+                else result
+            )
+            for result in (raw_results or [])
+        ]
         low_relevance = self._is_low_relevance(results)
         context = self.context_builder.build(results)
         return results, context, build_prompt(
@@ -319,6 +335,7 @@ class RAGService:
                 answer = "生成服务暂时不可用，请稍后重试。"
                 answer_parts.append(answer)
                 yield answer
+        token_usage = getattr(self.llm_client, "last_token_usage", None)
         self._log(
             request_id,
             question,
@@ -328,6 +345,7 @@ class RAGService:
             started,
             fallback_used,
             error,
+            token_usage=token_usage,
         )
 
     def stream_answer_events(
@@ -402,6 +420,7 @@ class RAGService:
         fallback_used = not results
         answer_parts: List[str] = []
         error: Optional[str] = None
+        token_usage: Optional[Dict[str, Any]] = None
         if fallback_used and not self.allow_llm_fallback:
             answer = "当前知识库中未找到相关文档，无法基于知识库回答。"
             answer_parts.append(answer)
@@ -419,10 +438,15 @@ class RAGService:
                 answer_parts.append(answer)
                 yield emit("error", text=answer, error=error)
             finally:
+                token_usage = getattr(self.llm_client, "last_token_usage", None)
                 yield emit(
                     "llm_finished",
                     text="生成模型调用结束",
-                    metadata={"latency_ms": (perf_counter() - llm_started) * 1000, "ok": error is None},
+                    metadata={
+                        "latency_ms": (perf_counter() - llm_started) * 1000,
+                        "ok": error is None,
+                        "token_usage": token_usage,
+                    },
                 )
 
         self._log(
@@ -434,8 +458,9 @@ class RAGService:
             started,
             fallback_used,
             error,
+            token_usage=token_usage,
         )
-        yield emit("end", error=error)
+        yield emit("end", error=error, metadata={"token_usage": token_usage})
 
 
 __all__ = ["RAGService", "RetrieverLike"]

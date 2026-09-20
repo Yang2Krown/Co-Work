@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
-from src.agent.schemas import AgentRequest
+from src.agent.integration import paper_catalog_from_documents
+from src.agent.schemas import AgentRequest, ToolCall
 from src.backend.env import load_dotenv
 from .bootstrap import BackendResources, EmptyRetriever, compose, friendly_error
 from .contracts import ImportJob, MessageRecord, RunRecord
@@ -72,6 +73,39 @@ class Application:
 
     def list_documents(self):
         return self.documents.list()
+
+    def list_ready_papers(self):
+        """Return paper options derived from ready backend documents only."""
+
+        documents = self.documents.ready()
+        catalog = paper_catalog_from_documents(documents)
+        papers = []
+        for document in documents:
+            paper = catalog.get(document.document_id)
+            if paper is None:
+                continue
+            item = paper.model_dump(mode='json')
+            item.pop('text', None)
+            papers.append(item)
+        return papers
+
+    def run_paper_tool(self, tool_name, arguments):
+        """Run an existing paper tool through the application operation gate."""
+
+        if tool_name not in {'paper_summary', 'paper_compare'}:
+            raise ValueError('不支持的论文分析操作')
+        with self.gate:
+            self._reserve('分析论文')
+            try:
+                self._ensure()
+                call = ToolCall(name=tool_name, arguments=arguments)
+                config = getattr(self.agent, 'config', None)
+                timeout = float(getattr(config, 'tool_timeout_seconds', 90))
+                retries = int(getattr(config, 'tool_retry_count', 0))
+                result = self.agent.registry.execute(call, timeout_seconds=timeout, retries=retries)
+                return result.model_dump(mode='json')
+            finally:
+                self.busy, self.operation = False, None
 
     def submit_import(self, files):
         with self.gate:
@@ -165,13 +199,19 @@ class Application:
                 raise ValueError('任务进行中，暂时不能删除会话。')
             self.conversations.delete(identifier)
 
-    def start_turn(self, conversation_id, message, metadata=None):
+    def start_turn(self, conversation_id, message, metadata=None, mode=None):
         request = AgentRequest(session_id=conversation_id, message=message, metadata=metadata or {})
         with self.gate:
             conversation = self.get_conversation(conversation_id)
             self._reserve('生成回答')
             try:
-                run = RunRecord(run_id=str(uuid4()), conversation_id=conversation_id, mode=conversation['mode'], created_at=now(), metadata=request.metadata)
+                run = RunRecord(
+                    run_id=str(uuid4()),
+                    conversation_id=conversation_id,
+                    mode=mode or conversation['mode'],
+                    created_at=now(),
+                    metadata=request.metadata,
+                )
                 user = MessageRecord(message_id=str(uuid4()), conversation_id=conversation_id, run_id=run.run_id,
                     role='user', content=request.message, status='completed', created_at=now())
                 answer = MessageRecord(message_id=str(uuid4()), conversation_id=conversation_id, run_id=run.run_id,
@@ -205,11 +245,18 @@ class Application:
                         answer.retrieved_chunks = data['retrieved_chunks']
                     elif name == 'token':
                         answer.content += data.get('text') or ''
+                    elif name == 'llm_finished':
+                        metadata = data.get('metadata') or {}
+                        if metadata.get('token_usage') is not None:
+                            answer.token_usage = metadata['token_usage']
                     elif name == 'error':
                         answer.error = data.get('error') or '生成中断，请重试。'
                     elif name == 'end':
                         terminal = True
                         answer.error = data.get('error') or answer.error
+                        metadata = data.get('metadata') or {}
+                        if metadata.get('token_usage') is not None:
+                            answer.token_usage = metadata['token_usage']
                         answer.status = 'failed' if answer.error else 'completed'
                 else:
                     payload = data.get('payload', {})
