@@ -31,6 +31,11 @@ def main() -> int:
         model_name=config.embedding.model_name,
         batch_size=config.embedding.batch_size,
         normalize_embeddings=config.embedding.normalize_embeddings,
+        provider=config.embedding.provider,
+        api_base=config.embedding.api_base,
+        api_base_env=config.embedding.api_base_env,
+        api_key_env=config.embedding.api_key_env,
+        timeout_seconds=config.embedding.timeout_seconds,
     )
     vector_store = create_vector_store(
         config.vector_store.type,

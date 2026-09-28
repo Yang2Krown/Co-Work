@@ -111,3 +111,79 @@ Python 3.11.16；真实结果和原始 JSON 见以下文档与链接。
 [retrieval](docs/backend/results/retrieval.json)
 
 后端不负责 Streamlit/Gradio 页面、Agent ReAct 循环、工具路由或最终系统级评测。
+
+## Agent quick start
+
+Agent 模块位于 `src/agent/`，不改写 `src/backend/`。默认注册八个工具：知识库
+RAG、论文元信息、论文对比、关键词提取、论文结构化摘要、当前时间、安全计算器
+和可注入的联网搜索。没有注入搜索函数时，联网搜索保持关闭。
+
+Agent 默认通过后端已有的 OpenAI-compatible client 连接 DeepSeek，当前配置为
+`https://api.deepseek.com`、`deepseek-v4-flash` 和 `DEEPSEEK_API_KEY`。真实调用前只在
+本机配置密钥，不要把密钥写入代码、YAML 或 Git：
+
+```bash
+cp .env.example .env
+# 编辑 .env，把 your-deepseek-api-key-here 替换为本地 Key
+source .env
+```
+
+如果后端已经构造好了 `RAGService`，可以直接注入；如果只有后端的混合检索器，
+推荐使用组合工厂，让 Agent 和 RAG 共用同一个 DeepSeek client，并强制使用后端的
+`hybrid_rerank`（向量检索 + BM25 + RRF + Reranker）：
+
+```python
+from src.agent import build_deepseek_rag_agent_service, create_app
+
+agent_service = build_deepseek_rag_agent_service(
+    retriever=hybrid_retriever,
+    documents=ingestion_result,
+)
+app = create_app(agent_service)
+```
+
+若已有后端 `RAGService`，并且它已经使用了同一个 DeepSeek client，则使用
+`build_agent_service(llm_client=rag_service.llm_client, rag_service=rag_service)`。
+两种方式都只通过集成边界复用后端检索实现，不在 Agent 中重复编写 BM25、RRF 或
+Reranker。
+
+客户端构造和模块导入不会发起网络请求；只有需要 ReAct、RAG 生成或模型摘要时才会读取
+`DEEPSEEK_API_KEY` 并调用 DeepSeek。计算器、当前时间、关键词提取等确定性路由可在无
+Key 时离线运行。传入的 `rag_service` 或 `hybrid_retriever` 仍由后端负责；本模块不改写队友的
+RAG 实现。
+
+接口为 `GET /healthz`、`POST /api/agent/chat` 和 `POST /api/agent/chat/stream`。
+ReAct 协议、会话记忆、真实引用边界和集成方式见
+[Agent 架构说明](docs/agent/architecture.md) 与 [Agent 集成说明](docs/agent/integration.md)。
+论文基准库、近期论文演示库和本地索引步骤见
+[Agent 论文库说明](docs/agent/paper_corpora.md)；论文 PDF、索引和 API Key 均不提交到 Git。
+
+## Research workspace UI
+
+The local single-user Streamlit workspace uses **DeepSeek API for both Agent
+and direct RAG**, sharing one client. Install `requirements.txt`, configure
+`DEEPSEEK_API_KEY` in your shell, then run:
+
+```bash
+.venv/bin/streamlit run app.py
+```
+
+Model settings come from `config/agent.yaml`. On first entry the UI requires a
+DeepSeek API Key and performs a real connection check before opening the
+workspace. The key stays in the current Streamlit process and is never written
+to SQLite or project files; it must be entered again after restarting the app.
+The default workspace `data/workspace/` contains private files, SQLite history
+and indexes and is Git-ignored. Set `COWORK_DATA_DIR` to use another local
+workspace. The server binds to `127.0.0.1` by default. First document ingestion
+requires the local embedding/vector-store dependencies and may download models.
+
+- [Development plan](docs/frontend/development-plan.md)
+- [Application contracts](docs/frontend/integration-contract.md)
+- [Design specification](docs/frontend/design-spec.md)
+- [Six-screen interactive prototype](docs/frontend/prototype/index.html)
+- [Validation record](docs/frontend/validation.md)
+
+The sidebar has two primary destinations: **聊天** and **知识库**. Chat
+preserves conversation context and can call the local retrieval, paper summary,
+comparison, keyword, calculator, and time tools. Web search remains disabled
+until an adapter is injected.

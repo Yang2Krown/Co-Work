@@ -1,17 +1,25 @@
-"""Configurable, lazy-loaded embedding service."""
+"""Configurable local and DashScope embedding service."""
 
 from dataclasses import dataclass
+import json
+import os
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import numpy as np
 
+from ..env import load_dotenv
 from ..exceptions import EmbeddingError
 
 
 EMBEDDING_MODELS: Dict[str, str] = {
     "bge-large-zh": "BAAI/bge-large-zh-v1.5",
     "m3e-base": "moka-ai/m3e-base",
+    "qwen3.7-text-embedding": "qwen3.7-text-embedding",
+    "qwen3.7-text-embedding-flash": "qwen3.7-text-embedding-flash",
+    "text-embedding-v4": "text-embedding-v4",
 }
 
 
@@ -33,7 +41,11 @@ def resolve_embedding_model(model_name: str) -> str:
 
 
 class EmbeddingService:
-    """Generate embeddings without loading or downloading models at import time."""
+    """Generate embeddings locally or through DashScope's compatible API.
+
+    DashScope requests are made only when embedding is invoked. API keys and
+    workspace hosts stay in environment variables, never in source code.
+    """
 
     def __init__(
         self,
@@ -42,16 +54,30 @@ class EmbeddingService:
         device: Optional[str] = None,
         normalize_embeddings: bool = True,
         model: Any = None,
+        provider: str = "local",
+        api_base: Optional[str] = None,
+        api_base_env: str = "DASHSCOPE_API_BASE",
+        api_key_env: str = "DASHSCOPE_API_KEY",
+        timeout_seconds: float = 60.0,
     ) -> None:
         if batch_size <= 0:
             raise ValueError("batch_size must be greater than zero")
         if not model_name.strip():
             raise ValueError("model_name must not be empty")
+        if provider not in {"local", "dashscope"}:
+            raise ValueError("provider must be 'local' or 'dashscope'")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than zero")
         self.model_name = model_name
         self.batch_size = batch_size
         self.device = device
         self.normalize_embeddings = normalize_embeddings
         self._model = model
+        self.provider = provider
+        self.api_base = api_base
+        self.api_base_env = api_base_env
+        self.api_key_env = api_key_env
+        self.timeout_seconds = timeout_seconds
         self.last_stats: Optional[EmbeddingStats] = None
 
     @property
@@ -78,6 +104,67 @@ class EmbeddingService:
                 "Unable to load embedding model " + self.resolved_model_name
             ) from exc
 
+    def _dashscope_endpoint(self) -> str:
+        api_base = (self.api_base or os.getenv(self.api_base_env, "")).strip()
+        if not api_base:
+            raise EmbeddingError(
+                "DashScope embedding endpoint is not configured; set "
+                + self.api_base_env
+            )
+        if not api_base.startswith(("https://", "http://")):
+            raise EmbeddingError("DashScope embedding endpoint must be an HTTP(S) URL")
+        return api_base.rstrip("/") + "/embeddings"
+
+    def _dashscope_embeddings(self, texts: Sequence[str]) -> List[List[float]]:
+        load_dotenv()
+        api_key = os.getenv(self.api_key_env, "").strip()
+        if not api_key:
+            raise EmbeddingError(
+                "DashScope API key is not set in environment variable " + self.api_key_env
+            )
+        payload = json.dumps(
+            {"model": self.resolved_model_name, "input": list(texts)},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        request = Request(
+            self._dashscope_endpoint(),
+            data=payload,
+            headers={
+                "Authorization": "Bearer " + api_key,
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                body = response.read().decode("utf-8")
+        except HTTPError as exc:
+            raise EmbeddingError(
+                "DashScope embedding request failed with HTTP " + str(exc.code)
+            ) from exc
+        except URLError as exc:
+            raise EmbeddingError("DashScope embedding request could not be completed") from exc
+        except OSError as exc:
+            raise EmbeddingError("DashScope embedding request failed") from exc
+        try:
+            decoded = json.loads(body)
+            items = decoded["data"]
+            ordered = sorted(items, key=lambda item: int(item.get("index", 0)))
+            vectors = [item["embedding"] for item in ordered]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise EmbeddingError("DashScope returned an invalid embedding response") from exc
+        if len(vectors) != len(texts):
+            raise EmbeddingError("DashScope returned an unexpected embedding count")
+        return vectors
+
+    def _normalize(self, matrix: np.ndarray) -> np.ndarray:
+        if not self.normalize_embeddings:
+            return matrix
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        if np.any(~np.isfinite(norms)) or np.any(norms == 0):
+            raise EmbeddingError("Embedding model returned a non-finite or zero vector")
+        return matrix / norms
+
     def embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
         """Embed a batch of texts and record basic speed/dimension statistics."""
 
@@ -95,13 +182,22 @@ class EmbeddingService:
 
         started = perf_counter()
         try:
-            encoded = self._get_model().encode(
-                list(texts),
-                batch_size=self.batch_size,
-                show_progress_bar=False,
-                convert_to_numpy=True,
-                normalize_embeddings=self.normalize_embeddings,
-            )
+            if self.provider == "dashscope":
+                batches = [
+                    list(texts)[index : index + self.batch_size]
+                    for index in range(0, len(texts), self.batch_size)
+                ]
+                encoded = [
+                    vector for batch in batches for vector in self._dashscope_embeddings(batch)
+                ]
+            else:
+                encoded = self._get_model().encode(
+                    list(texts),
+                    batch_size=self.batch_size,
+                    show_progress_bar=False,
+                    convert_to_numpy=True,
+                    normalize_embeddings=self.normalize_embeddings,
+                )
         except EmbeddingError:
             raise
         except Exception as exc:
@@ -112,6 +208,8 @@ class EmbeddingService:
             matrix = matrix.reshape(1, -1)
         if matrix.ndim != 2 or matrix.shape[0] != len(texts):
             raise EmbeddingError("Embedding model returned an invalid shape")
+        if self.provider == "dashscope":
+            matrix = self._normalize(matrix)
 
         elapsed_ms = (perf_counter() - started) * 1000
         elapsed_seconds = max(elapsed_ms / 1000, 1e-12)
@@ -133,4 +231,3 @@ class EmbeddingService:
 
 
 __all__ = ["EMBEDDING_MODELS", "EmbeddingService", "EmbeddingStats", "resolve_embedding_model"]
-
